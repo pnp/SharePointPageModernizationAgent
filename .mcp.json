@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "classic-to-modern": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["mcp-server/start.cjs"]
+    },
+    "playwright": {
+      "command": "cmd",
+      "args": ["/c", "npx", "@playwright/mcp@latest", "--extension", "--browser", "chrome"],
+      "env": {
+        "PLAYWRIGHT_MCP_EXTENSION_TOKEN":
+          "<Your Token>"
+      }
+    }
+  }
+}

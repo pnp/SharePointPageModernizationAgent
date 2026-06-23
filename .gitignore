@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.png
+screenshots/
+.env
+msal-cache.json
+.claude/settings.local.json
+pageunderstanding/
+.playwright-mcp/
