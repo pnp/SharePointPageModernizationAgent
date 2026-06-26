@@ -46,8 +46,8 @@ Sign-in uses a real browser via Playwright. You authenticate once per tenant; th
 ## Setup
 
 ```bash
-git clone https://github.com/pnp/SPPageMigrationAgent.git
-cd SPPageMigrationAgent/mcp-server
+git clone https://github.com/pnp/SharePointPageModernizationAgent.git
+cd SharePointPageModernizationAgent/mcp-server
 npm install
 npx tsc
 ```
