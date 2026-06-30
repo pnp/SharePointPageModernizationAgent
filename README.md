@@ -2,9 +2,6 @@
 
 AI-assisted migration of **classic SharePoint pages** (wiki, web part, publishing) to **modern SharePoint pages**. An AI agent (Claude Code, GitHub Copilot, or any MCP-capable host) drives a local **Model Context Protocol (MCP) server** to do the work.
 
-> ### Not an officially supported tool
-> This project is an **open-source community sample**, provided **as-is**. It is **not** a supported Microsoft product, and Microsoft / PnP / SharePoint Support will not help with issues caused by it. Test against a non-production environment first, review every change, and validate output before trusting it in production. Issues and PRs are triaged on a best-effort basis with **no SLA**.
-
 ---
 
 ## Why use it
