@@ -95,48 +95,35 @@ claude      # Claude Code
 > Migrate this classic page to a modern page:
 > `https://contoso.sharepoint.com/sites/Marketing/SitePages/OldHome.aspx`
 
-The agent extracts, transforms, creates, and refines automatically, then gives you the URL of the new modern page.
+The agent extracts, transforms, creates, and refines automatically, then gives you the URL of the new modern page. Some variations:
 
-> **Publishing pages** can't host a modern page in place. Tell the agent a **destination site**, e.g. *"…create the modern page on `https://contoso.sharepoint.com/sites/MarketingModern`"*.
+> Just extract and analyze `https://contoso.sharepoint.com/sites/HR/SitePages/Policies.aspx` — don't create the modern page yet, show me what you found.
+
+> Migrate this page but keep any script editor content as an explanatory text note instead of trying to reproduce it.
+
+> Redo the migration for `OldHome.aspx` and overwrite the existing modern page.
+
+> **Publishing pages** can't host a modern page in place. Tell the agent a **destination site**:
+>
+> Migrate `https://contoso.sharepoint.com/sites/News/Pages/Article.aspx` and create the modern page on `https://contoso.sharepoint.com/sites/NewsModern`.
 
 **4. Migrate a whole site** by pointing the agent at it:
 
 > Migrate all classic pages on `https://contoso.sharepoint.com/sites/Marketing` to modern pages.
 
-It discovers the pages, migrates them (several in parallel), and reports quality scores plus any pages needing a closer look.
-
-**5. Review** the generated pages against the originals before publishing or deleting anything. Content that can't be perfectly reproduced is preserved as explanatory text describing what was lost and a suggested modern alternative.
-
-### Example prompts
-
-You talk to the agent in plain language. Here are prompts for common scenarios:
-
-**Single page**
-> Migrate this classic page to a modern page: `https://contoso.sharepoint.com/sites/Marketing/SitePages/OldHome.aspx`
-
-> Just extract and analyze `https://contoso.sharepoint.com/sites/HR/SitePages/Policies.aspx` — don't create the modern page yet, show me what you found.
-
-**Publishing pages (need a destination)**
-> Migrate `https://contoso.sharepoint.com/sites/News/Pages/Article.aspx` and create the modern page on `https://contoso.sharepoint.com/sites/NewsModern`.
-
-**Whole site**
-> Migrate all classic pages on `https://contoso.sharepoint.com/sites/Marketing` to modern pages.
+It discovers the pages, migrates them (several in parallel), and reports quality scores plus any pages needing a closer look. You can also scope or plan first:
 
 > List the classic pages on `https://contoso.sharepoint.com/sites/Marketing` and give me a migration plan first — don't migrate anything yet.
 
 > Migrate only the pages under the `SitePages` library on `https://contoso.sharepoint.com/sites/Marketing`.
 
-**Review and refine**
+**5. Review and refine.** Open the generated pages against the originals before publishing or deleting anything. Content that can't be perfectly reproduced is preserved as explanatory text describing what was lost and a suggested modern alternative. Ask the agent to fix anything that's off:
+
 > Compare the modern page you just created against the classic original and tell me the fidelity score.
 
 > The layout is off on `OldHome.aspx` — please compare and refine that page again.
 
 > The hero image didn't come across. Re-check the classic page and fix the image web part on the modern page.
-
-**Controlling scope**
-> Migrate this page but keep any script editor content as an explanatory text note instead of trying to reproduce it.
-
-> Redo the migration for `OldHome.aspx` and overwrite the existing modern page.
 
 ### Tips
 
