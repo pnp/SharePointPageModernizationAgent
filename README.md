@@ -44,36 +44,34 @@ Sign-in uses a real browser via Playwright. You authenticate once per tenant; th
 
 ```bash
 git clone https://github.com/pnp/SharePointPageModernizationAgent.git
-cd SharePointPageModernizationAgent/mcp-server
+cd SharePointPageModernizationAgent
+```
+
+### Option A — one-step script (recommended)
+
+The setup script checks Node.js, installs dependencies, builds the server, runs a
+smoke test, verifies the MCP server starts (a real `initialize` handshake), and
+creates `.mcp.json` for you. Run it from the repo root:
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+```
+
+```bash
+# macOS / Linux / WSL / Git Bash
+./setup.sh
+```
+
+Then skip to [How to use](#how-to-use).
+
+### Option B — manual steps
+
+```bash
+cd mcp-server
 npm install
 npx tsc
 ```
-
-Then add a `.mcp.json` in the repo root pointing your host at the server:
-
-```jsonc
-{
-  "mcpServers": {
-    "classic-to-modern": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["mcp-server/start.cjs"]
-    },
-
-    // OPTIONAL — only if your host doesn't already provide a Playwright MCP server.
-    // Replace the token with the one printed by the Playwright MCP browser extension on first launch.
-    "playwright": {
-      "command": "cmd",
-      "args": ["/c", "npx", "@playwright/mcp@latest", "--extension", "--browser", "chrome"],
-      "env": {
-        "PLAYWRIGHT_MCP_EXTENSION_TOKEN": "<your-extension-token-here>"
-      }
-    }
-  }
-}
-```
-
-> Most hosts parse `.mcp.json` as strict JSON — remove the `//` comments before saving. Never commit real tokens.
 
 ---
 

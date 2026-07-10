@@ -6,12 +6,8 @@
       "args": ["mcp-server/start.cjs"]
     },
     "playwright": {
-      "command": "cmd",
-      "args": ["/c", "npx", "@playwright/mcp@latest", "--extension", "--browser", "chrome"],
-      "env": {
-        "PLAYWRIGHT_MCP_EXTENSION_TOKEN":
-          "<Your Token>"
-      }
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
     }
   }
 }
