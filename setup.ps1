@@ -83,6 +83,11 @@ function Add-DirToUserPath([string]$dir) {
 $RepoRoot = $PSScriptRoot
 $McpDir   = Join-Path $RepoRoot 'mcp-server'
 
+# Tracks whether we changed a persistent (system/user) environment variable.
+# When set, we prompt the user at the end to restart their terminal / VS Code
+# so the new value is picked up by already-running processes.
+$script:EnvChanged = $false
+
 Write-Host "SharePoint Page Migration Agent - setup" -ForegroundColor White
 Write-Info "Repo root: $RepoRoot"
 
@@ -121,6 +126,7 @@ if (-not $wasOnPath) {
         Write-Warn2 "until you add $nodeDir to your PATH manually."
     }
     elseif (Add-DirToUserPath $nodeDir) {
+        $script:EnvChanged = $true
         Write-Ok "Added $nodeDir to your user PATH."
         Write-Warn2 "IMPORTANT: restart your terminal AND your AI host so they pick up the new PATH."
     }
@@ -227,6 +233,19 @@ else {
 # Done
 # ---------------------------------------------------------------------------
 Write-Host "`nSetup complete." -ForegroundColor Green
+
+if ($script:EnvChanged) {
+    Write-Host "`n============================================================" -ForegroundColor Yellow
+    Write-Host " ACTION REQUIRED: environment variables were changed" -ForegroundColor Yellow
+    Write-Host "============================================================" -ForegroundColor Yellow
+    Write-Warn2 "Your user PATH was updated during setup."
+    Write-Warn2 "Already-running programs won't see the change until they restart."
+    Write-Warn2 "Please RESTART your terminal (and Visual Studio Code, if you're"
+    Write-Warn2 "running Copilot/Claude inside VS Code) before continuing."
+    Write-Info  "Tip: in VS Code, close ALL windows or run 'Developer: Reload Window'"
+    Write-Info  "may not be enough - a full restart of VS Code is recommended."
+}
+
 Write-Host "Next steps:" -ForegroundColor White
 Write-Info "1. Start your AI host from this folder:  copilot   (or)   claude"
 Write-Info "2. Run /mcp and confirm 'classic-to-modern' is loaded."

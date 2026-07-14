@@ -48,6 +48,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 MCP_DIR="$REPO_ROOT/mcp-server"
 
+# Tracks whether we changed a persistent environment variable (shell profile /
+# PATH). When set, we prompt the user at the end to restart their terminal or
+# editor so already-running processes pick up the new value.
+ENV_CHANGED=0
+
 printf '%sSharePoint Page Migration Agent - setup%s\n' "$C_RESET" "$C_RESET"
 info "Repo root: $REPO_ROOT"
 
@@ -127,6 +132,7 @@ if [ "$WAS_ON_PATH" -eq 0 ]; then
   else
     RC="$(persist_path "$NODE_DIR" || true)"
     if [ -n "${RC:-}" ]; then
+      ENV_CHANGED=1
       ok "Added $NODE_DIR to PATH in $RC"
       warn "IMPORTANT: run 'source $RC' (or open a new terminal), then restart your AI host."
     else
@@ -217,6 +223,17 @@ fi
 # Done
 # ---------------------------------------------------------------------------
 printf '\n%sSetup complete.%s\n' "$C_GREEN" "$C_RESET"
+
+if [ "$ENV_CHANGED" -eq 1 ]; then
+  printf '\n%s============================================================%s\n' "$C_YELLOW" "$C_RESET"
+  printf '%s ACTION REQUIRED: environment variables were changed%s\n' "$C_YELLOW" "$C_RESET"
+  printf '%s============================================================%s\n' "$C_YELLOW" "$C_RESET"
+  warn "Your PATH / shell profile was updated during setup."
+  warn "Already-running programs won't see the change until they restart."
+  warn "Please RESTART your terminal (and Visual Studio Code, if you're"
+  warn "running Copilot/Claude inside VS Code) before continuing."
+fi
+
 printf '%sNext steps:%s\n' "$C_RESET" "$C_RESET"
 info "1. Start your AI host from this folder:  copilot   (or)   claude"
 info "2. Run /mcp and confirm 'classic-to-modern' is loaded."
