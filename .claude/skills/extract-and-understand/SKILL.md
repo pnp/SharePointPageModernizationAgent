@@ -25,7 +25,7 @@ Extract a classic SharePoint page (wiki, web part page, or publishing page), cla
 ## When to Ask the User
 
 Only ask when you **cannot proceed**:
-- **Destination site URL is unknown** for a publishing site migration
+- **Destination site URL is unknown** for a publishing site migration **where the Site Pages feature is not activated**
 - **Genuinely ambiguous content** that would significantly impact the result
 
 Do NOT ask about layout choices, web part type, skipping empty web parts, or page naming.
@@ -214,7 +214,7 @@ ContentEditorWebPart (CEWP) contains arbitrary HTML. Classify by intent:
 ## Troubleshooting
 
 - If `extract_classic_page` errors, verify site URL and page name
-- Publishing sites cannot host modern pages — user must specify a destination site
+- Publishing sites can host modern pages **only when the Site Pages feature is activated** (a Site Pages library exists). If activated, migrate in the same site; otherwise the user must specify a separate destination site.
 - Permission errors → app needs `Sites.Read.All` minimum
 
 ---

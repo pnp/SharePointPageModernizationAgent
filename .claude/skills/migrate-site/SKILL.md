@@ -8,7 +8,7 @@ model: sonnet
 
 Orchestrate end-to-end migration of all classic pages in a SharePoint site to modern pages. This skill discovers pages, extracts CIMs, migrates each page in parallel (up to 5 at a time), scores quality, and produces a final summary with refinement recommendations.
 
-**Be fully autonomous.** Do not ask the user questions during migration unless there is an actual blocker (e.g., destination site URL is unknown for a publishing site). Make reasonable decisions and keep moving.
+**Be fully autonomous.** Do not ask the user questions during migration unless there is an actual blocker (e.g., destination site URL is unknown for a publishing site that does **not** have the Site Pages feature activated). Make reasonable decisions and keep moving.
 
 ---
 
@@ -32,7 +32,10 @@ Subagents do NOT inherit the orchestrator's model selection, so specify the mode
    - Use `includeModernPages: false` to skip pages that are already modern
    - Present the page list to the user as a summary table (name, type, library)
 
-2. **Determine destination site** — For publishing sites (which cannot host modern pages), the user must have specified a destination site URL. For other sites, the destination is the same site. If the destination is unknown and the source is a publishing site, this is the **one case** where you should ask the user.
+2. **Determine destination site** — Modern pages live in a **Site Pages** library, which only exists when the **Site Pages** (site collection) feature is activated.
+   - **Same-site migration is preferred when possible.** Even for publishing sites, if the **Site Pages** feature is activated on the source site, modern pages can be created **in the same site** — no separate destination is needed.
+   - To detect this, check whether the source site exposes a Site Pages library: call `list_site_pages` with `library: "both"` (a non-empty/queryable `SitePages` entry) or `resolve_list_info(siteUrl, "Site Pages")`. If it resolves, the feature is activated and the destination is the **same site**.
+   - Only when the source is a publishing site **and** the Site Pages feature is **not** activated (no Site Pages library) must the user supply a separate destination site URL. If it is unknown in that case, this is the **one case** where you should ask the user.
 
 3. **Extract each page** — For each classic page found:
    - Invoke the `extract-and-understand` skill for that page
@@ -150,7 +153,7 @@ During the entire migration, do NOT ask the user about:
 
 **Only ask when truly blocked:**
 
-- Destination site URL is unknown for a publishing site migration
+- Destination site URL is unknown for a publishing site migration **where the Site Pages feature is not activated** (no Site Pages library, so modern pages cannot be created in the same site)
 - Authentication failure that cannot be retried
 
 ---

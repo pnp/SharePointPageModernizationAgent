@@ -101,7 +101,7 @@ The agent extracts, transforms, creates, and refines automatically, then gives y
 
 > Redo the migration for `OldHome.aspx` and overwrite the existing modern page.
 
-> **Publishing pages** can't host a modern page in place. Tell the agent a **destination site**:
+> **Publishing pages** can be migrated **in the same site** when the **Site Pages** feature is activated (a Site Pages library exists). If that feature isn't activated, the site can't host a modern page in place — tell the agent a **destination site**:
 >
 > Migrate `https://contoso.sharepoint.com/sites/News/Pages/Article.aspx` and create the modern page on `https://contoso.sharepoint.com/sites/NewsModern`.
 
