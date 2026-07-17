@@ -1,7 +1,7 @@
 ---
 name: extract-and-understand
 description: Extract classic SharePoint pages and build a CIM (Canonical Intermediate Model) for migration.
-model: opus
+model: sonnet
 ---
 
 # Phase 1: Extract & Understand

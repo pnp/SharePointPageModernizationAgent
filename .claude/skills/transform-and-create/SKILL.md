@@ -1,7 +1,7 @@
 ---
 name: transform-and-create
 description: Transform classic page content into modern web parts, assemble canvas layout, and create/update the modern page.
-model: opus
+model: sonnet
 ---
 
 # Phase 2: Transform & Create

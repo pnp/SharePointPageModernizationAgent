@@ -2,6 +2,9 @@
 
 AI-powered classic SharePoint page → modern page migration using MCP tools.
 
+## Getting started
+- **Always load the `migrate-site` skill first** at the start of any migration task, before any other skill. It is the entry-point orchestrator and routes to the phase skills (`extract-and-understand`, `transform-and-create`, `compare-and-refine`) as needed — even for a single page.
+
 ## Build & Test
 ```bash
 cd mcp-server && npm install   # first time only

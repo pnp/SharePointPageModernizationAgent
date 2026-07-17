@@ -1,7 +1,7 @@
 ---
 name: migrate-site
 description: Orchestrate bulk classic-to-modern SharePoint page migration for an entire site. Supports plan, migrate, and refine modes.
-model: opus
+model: sonnet
 ---
 
 # Site Migration
@@ -15,6 +15,13 @@ Orchestrate end-to-end migration of all classic pages in a SharePoint site to mo
 ## Hard Rule: Always Dispatch Subagents
 
 **Every `extract-and-understand` and `transform-and-create` invocation run inside a dispatched subagent (`Agent` tool), one subagent per page.
+
+### Model selection when dispatching subagents
+
+Subagents do NOT inherit the orchestrator's model selection, so specify the model explicitly when spawning each per-page task:
+
+- **Claude Code:** already specified in skill.md
+- **GitHub Copilot CLI:** pass the **fast model** and **medium** reasoning effort when calling the Task tool (e.g. `model` set to the fast/economic model, gpt-luna or mini, `reasoning_effort: "medium"`).
 
 ## Workflow
 
@@ -78,6 +85,7 @@ Each spawned task does the following for a single page:
 #### Parallelism
 
 - Use the Task tool to spawn up to **5 concurrent tasks** at a time
+- When dispatching each task, set its model explicitly (see **Model selection when dispatching subagents**): `sonnet` for Claude Code; the **fast model** with **medium** reasoning effort for GitHub Copilot CLI
 - When a task completes, spawn the next pending page's task (maintain up to 5 in flight)
 - Wait for all tasks to complete before proceeding to Phase 3
 - A Phase 1 task is usually expected to take 1-2 minutes, a phase 2 task is usually expected to take less than 5 minutes depending on page complexity. If a Phase 1 task takes longer than 5 minutes or a Phase 2 task takes longer than 10 minutes, check it proactively for issues.

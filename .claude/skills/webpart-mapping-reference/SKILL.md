@@ -1,7 +1,7 @@
 ---
 name: webpart-mapping-reference
 description: Supplementary reference for PnP selector functions, Community Script Editor, Quick Links layouts, and JavaScript alternatives. Read on-demand for deeper migration details.
-model: opus
+model: sonnet
 ---
 
 # Web Part Mapping Reference (Supplementary)

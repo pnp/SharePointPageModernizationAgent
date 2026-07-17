@@ -20,6 +20,8 @@ node test/test-safelinks.cjs
 
 ## GitHub Copilot CLI workflow
 
+> **Always load the `migrate-site` skill first** at the start of any migration task, before any other skill. It is the entry-point orchestrator and routes to the phase skills as needed, even for a single page.
+
 1. Start Copilot CLI from the repository root with `copilot`.
 2. Use `/mcp` to confirm the `classic-to-modern` MCP server from `.mcp.json` is loaded.
 3. Use `/skills` to confirm the project skills are available.

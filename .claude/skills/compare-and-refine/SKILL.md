@@ -1,7 +1,7 @@
 ---
 name: compare-and-refine
 description: Compare migrated modern page against the classic original using structural extraction, score quality, and refine until coverage is acceptable.
-model: opus
+model: sonnet
 ---
 
 # Phase 3: Compare & Refine
