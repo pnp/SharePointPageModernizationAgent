@@ -247,6 +247,6 @@ if ($script:EnvChanged) {
 }
 
 Write-Host "Next steps:" -ForegroundColor White
-Write-Info "1. Start your AI host from this folder:  copilot   (or)   claude"
+Write-Info "1. (Re)start your AI host from this folder:  copilot   (or)   claude"
 Write-Info "2. Run /mcp and confirm 'classic-to-modern' is loaded."
 Write-Info "3. Ask it to migrate a classic SharePoint page URL."

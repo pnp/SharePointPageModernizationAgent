@@ -235,6 +235,6 @@ if [ "$ENV_CHANGED" -eq 1 ]; then
 fi
 
 printf '%sNext steps:%s\n' "$C_RESET" "$C_RESET"
-info "1. Start your AI host from this folder:  copilot   (or)   claude"
+info "1. (Re)start your AI host from this folder:  copilot   (or)   claude"
 info "2. Run /mcp and confirm 'classic-to-modern' is loaded."
 info "3. Ask it to migrate a classic SharePoint page URL."
