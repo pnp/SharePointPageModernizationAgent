@@ -9,7 +9,15 @@
  * Uses a Playwright persistent browser profile so AAD session cookies
  * are preserved. First run: user logs in manually. After that: zero-click.
  */
-import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { logger } from '../utils/logger.js';
@@ -20,8 +28,11 @@ import type { BrowserContext, Page } from 'playwright-core';
 const CACHE_DIR = join(homedir(), '.classic-to-modern');
 const BROWSER_PROFILE_DIR = join(CACHE_DIR, 'browser-profile');
 const COOKIE_CACHE_FILE = join(CACHE_DIR, 'cookie-cache.json');
-const COOKIE_CACHE_TMP = join(CACHE_DIR, 'cookie-cache.json.tmp');
+const COOKIE_CACHE_TMP = join(CACHE_DIR, `cookie-cache.${process.pid}.tmp`);
 const BUFFER_MS = 5 * 60 * 1000; // 5-minute buffer before expiry
+const AUTH_LOCK_WAIT_MS = 6 * 60 * 1000;
+const AUTH_LOCK_STALE_MS = 10 * 60 * 1000;
+const AUTH_LOCK_POLL_MS = 500;
 
 // ── Cookie cache ──
 
@@ -81,6 +92,79 @@ function ensureDiskCacheLoaded(): void {
   }
   if (fromDisk.size > 0) {
     logger.info('Loaded cookie cache from disk', { hosts: fromDisk.size });
+  }
+}
+
+function refreshHostFromDisk(host: string): CookieEntry | undefined {
+  const diskEntry = loadDiskCache().get(host);
+  const memoryEntry = cookieCache.get(host);
+  if (diskEntry && (!memoryEntry || diskEntry.expiresAt >= memoryEntry.expiresAt)) {
+    cookieCache.set(host, diskEntry);
+    return diskEntry;
+  }
+  return memoryEntry;
+}
+
+function isUsableCookie(entry: CookieEntry | undefined): entry is CookieEntry {
+  return Boolean(entry && entry.expiresAt - Date.now() > BUFFER_MS);
+}
+
+// ── Cross-process auth lock ──
+
+function getAuthLockDirectory(host: string): string {
+  const safeHost = host.replace(/[^a-zA-Z0-9.-]/g, '_');
+  return join(CACHE_DIR, `auth-${safeHost}.lock`);
+}
+
+function tryAcquireAuthLock(lockDirectory: string): boolean {
+  mkdirSync(CACHE_DIR, { recursive: true });
+  try {
+    mkdirSync(lockDirectory);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+  }
+
+  try {
+    const ageMs = Date.now() - statSync(lockDirectory).mtimeMs;
+    if (ageMs > AUTH_LOCK_STALE_MS) {
+      logger.warn('Removing stale cross-process auth lock', { lockDirectory, ageMs });
+      rmdirSync(lockDirectory);
+      mkdirSync(lockDirectory);
+      return true;
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT' && code !== 'EEXIST') throw err;
+  }
+
+  return false;
+}
+
+async function acquireAuthLock(host: string): Promise<string> {
+  const lockDirectory = getAuthLockDirectory(host);
+  const deadline = Date.now() + AUTH_LOCK_WAIT_MS;
+
+  while (!tryAcquireAuthLock(lockDirectory)) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for another process to finish SharePoint authentication for ${host}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, AUTH_LOCK_POLL_MS));
+  }
+
+  return lockDirectory;
+}
+
+function releaseAuthLock(lockDirectory: string): void {
+  try {
+    rmdirSync(lockDirectory);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn('Failed to release cross-process auth lock', {
+        lockDirectory,
+        error: String(err),
+      });
+    }
   }
 }
 
@@ -282,8 +366,8 @@ async function acquireCookies(siteUrl: string): Promise<string> {
   ensureDiskCacheLoaded();
 
   // Tier 1: In-memory cache (includes entries loaded from disk)
-  const cached = cookieCache.get(host);
-  if (cached && cached.expiresAt - Date.now() > BUFFER_MS) {
+  const cached = refreshHostFromDisk(host);
+  if (isUsableCookie(cached)) {
     return cached.cookieHeader;
   }
 
@@ -292,10 +376,23 @@ async function acquireCookies(siteUrl: string): Promise<string> {
   if (inProgress) return inProgress;
 
   const promise = (async () => {
-    const entry = await acquireCookiesViaBrowser(siteUrl);
-    cookieCache.set(host, entry);
-    saveDiskCache();
-    return entry.cookieHeader;
+    const authLock = await acquireAuthLock(host);
+    try {
+      // Another MCP process may have refreshed the cache while this process
+      // waited. Re-read it before opening any browser.
+      const refreshed = refreshHostFromDisk(host);
+      if (isUsableCookie(refreshed)) {
+        logger.info('Reused cookies refreshed by another MCP process', { host });
+        return refreshed.cookieHeader;
+      }
+
+      const entry = await acquireCookiesViaBrowser(siteUrl);
+      cookieCache.set(host, entry);
+      saveDiskCache();
+      return entry.cookieHeader;
+    } finally {
+      releaseAuthLock(authLock);
+    }
   })();
 
   acquireInProgress.set(host, promise);

@@ -111,11 +111,13 @@ The agent extracts, transforms, creates, and refines automatically, then gives y
 
 It discovers the pages, migrates them (several in parallel), and reports quality scores plus any pages needing a closer look. You can also scope or plan first:
 
+If matching page-understanding JSON already exists for discovered pages, the agent lists those pages and asks whether to reuse the existing analysis or run extraction again.
+
 > List the classic pages on `https://contoso.sharepoint.com/sites/Marketing` and give me a migration plan first — don't migrate anything yet.
 
 > Migrate only the pages under the `SitePages` library on `https://contoso.sharepoint.com/sites/Marketing`.
 
-**5. Review and refine.** Open the generated pages against the originals before publishing or deleting anything. Content that can't be perfectly reproduced is preserved as explanatory text describing what was lost and a suggested modern alternative. Ask the agent to fix anything that's off:
+**5. Review and refine.** Open the generated pages against the originals before publishing or deleting anything. Content that can't be perfectly reproduced is preserved as yellow-highlighted explanatory text describing what was lost and a suggested modern alternative. Ask the agent to fix anything that's off:
 
 > Compare the modern page you just created against the classic original and tell me the fidelity score.
 

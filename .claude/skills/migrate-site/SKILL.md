@@ -8,7 +8,7 @@ model: sonnet
 
 Orchestrate end-to-end migration of all classic pages in a SharePoint site to modern pages. This skill discovers pages, extracts CIMs, migrates each page in parallel (up to 5 at a time), scores quality, and produces a final summary with refinement recommendations.
 
-**Be fully autonomous.** Do not ask the user questions during migration unless there is an actual blocker (e.g., destination site URL is unknown for a publishing site that does **not** have the Site Pages feature activated). Make reasonable decisions and keep moving.
+**Be fully autonomous.** Ask once after discovery when valid existing CIMs require a reuse decision. Otherwise, do not ask questions unless there is an actual blocker (e.g., destination site URL is unknown for a publishing site that does **not** have the Site Pages feature activated). Make reasonable decisions and keep moving.
 
 ---
 
@@ -35,22 +35,39 @@ Subagents do NOT inherit the orchestrator's model selection, so specify the mode
 2. **Determine destination site** — Modern pages live in a **Site Pages** library, which only exists when the **Site Pages** (site collection) feature is activated.
    - **Same-site migration is preferred when possible.** Even for publishing sites, if the **Site Pages** feature is activated on the source site, modern pages can be created **in the same site** — no separate destination is needed.
    - To detect this, check whether the source site exposes a Site Pages library: call `list_site_pages` with `library: "both"` (a non-empty/queryable `SitePages` entry) or `resolve_list_info(siteUrl, "Site Pages")`. If it resolves, the feature is activated and the destination is the **same site**.
-   - Only when the source is a publishing site **and** the Site Pages feature is **not** activated (no Site Pages library) must the user supply a separate destination site URL. If it is unknown in that case, this is the **one case** where you should ask the user.
+   - Only when the source is a publishing site **and** the Site Pages feature is **not** activated (no Site Pages library) must the user supply a separate destination site URL. If it is unknown in that case, ask the user for it.
 
-3. **Extract each page** — For each classic page found:
+3. **Check for existing page-understanding JSON** — Before dispatching any extraction tasks:
+   - Derive each discovered page's expected CIM path: `pageunderstanding/<sitename>/<page-name-without-aspx>.json`
+   - Check which expected files already exist
+   - Parse each existing file and verify that it is reusable:
+     - Valid JSON object with `schemaVersion`, `source`, and `content`
+     - `source.siteUrl` identifies the discovered source site
+     - `source.pageName` identifies the discovered classic page
+   - Treat invalid, unreadable, or source-mismatched files as non-reusable and re-extract those pages automatically. Report why they were rejected.
+   - If one or more reusable CIMs exist, present them in a table with page name, `extractedAt`, and `migrationStatus`, then ask the user **once** how to handle those pages:
+     1. **Reuse all existing CIMs and skip page understanding (recommended)**
+     2. **Re-extract all pages that already have CIMs**
+     3. **Choose which existing CIMs to reuse**
+   - If the user chooses individual pages, ask one follow-up question for the page names. Reuse only those selections and re-extract the remaining pages.
+   - If no reusable CIM exists, do not ask; continue directly to extraction.
+
+4. **Extract pages that are not being reused** — For each classic page without a reusable/selected CIM:
    - Invoke the `extract-and-understand` skill for that page
    - **Important:** Extract and save the CIM only — do NOT auto-handoff to `transform-and-create`
    - The `extract-and-understand` skill saves a CIM JSON file at `pageunderstanding/<sitename>/<pagename>.json`
 
-4. **Mark CIMs as planned** — After each successful extraction, update the CIM JSON file:
+5. **Mark CIMs as planned** — After each successful extraction, and for each existing CIM selected for reuse, update the CIM JSON file:
    - Add `"migrationStatus": "planned"` at the top level
    - Add `"plannedAt": "<ISO timestamp>"` at the top level
+   - Reusing a CIM skips only `extract-and-understand`; the page still proceeds through transform, create/update, and comparison
    - If extraction fails, set `"migrationStatus": "error"`, `"error": "<message>"`, `"lastAttemptAt": "<ISO timestamp>"` and continue with the next page
 
-5. **Report plan summary** — Display:
+6. **Report plan summary** — Display:
    - Total pages found vs. successfully extracted
+   - Pages reusing existing CIMs vs. pages freshly extracted
    - Any pages that failed extraction (with error details)
-   - Then proceed to Phase 2 after a user consent prompt ("Proceed to migrate the planned pages?")
+   - Then proceed directly to Phase 2
 
 ### Phase 2: Migrate & Score — Parallel Page Migration
 
@@ -72,10 +89,14 @@ Each spawned task does the following for a single page:
    - `"destinationSiteUrl": "<destination site URL>"`
 
 3. **Invoke `compare-and-refine`** — Compare only, do NOT refine
-   - Run the structural comparison (extraction script on classic page, extraction script on modern page, then `compare_migration_quality`)
+   - Build cleaned classic comparison data from the Phase 1 extraction bundle; do **not** structurally extract the live classic page because classic chrome and duplicate wrappers distort counts
+   - Extract the modern page, then run `compare_migration_quality`
+   - Apply the `compare-and-refine` score sanity gate. Re-extract once when a score below 50 contradicts strong text or heading coverage
    - Record the comparison score but do NOT iterate or fix issues
+   - If the comparison remains contradictory, record `comparisonScore: null` and `comparisonConfidence: "low"` with an inconclusive summary instead of a misleading zero
    - Update the CIM with:
-     - `"comparisonScore": <0-100 number>`
+     - `"comparisonScore": <0-100 number or null when inconclusive>`
+     - `"comparisonConfidence": "high" | "low"`
      - `"comparisonSummary": "<brief text: what's missing>"`
      - `"comparedAt": "<ISO timestamp>"`
 
@@ -151,10 +172,11 @@ During the entire migration, do NOT ask the user about:
 - Page conflicts — update existing pages automatically
 - Whether to proceed after planning — just proceed
 
-**Only ask when truly blocked:**
+**Allowed user confirmations:**
 
 - Destination site URL is unknown for a publishing site migration **where the Site Pages feature is not activated** (no Site Pages library, so modern pages cannot be created in the same site)
 - Authentication failure that cannot be retried
+- One grouped decision about whether to reuse valid existing page-understanding JSON files, as defined in Phase 1 Step 3
 
 ---
 

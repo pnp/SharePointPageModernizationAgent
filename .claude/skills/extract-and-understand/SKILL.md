@@ -192,7 +192,7 @@ ContentEditorWebPart (CEWP) contains arbitrary HTML. Classify by intent:
 
 ### JavaScript-Dependent Content
 **Signals:** `<script>` tags, `onclick` handlers, jQuery references, `SP.js` calls
-**Action:** `build_text_webpart` with explanatory note. Scripts cannot run in modern pages.
+**Action:** Plan a `build_text_webpart` fallback whose complete explanatory note is wrapped in `<span class="ms-rtebackcolor-3">...</span>` for native yellow highlighting. Scripts cannot run in modern pages.
 
 ---
 
@@ -207,7 +207,7 @@ ContentEditorWebPart (CEWP) contains arbitrary HTML. Classify by intent:
 | Embedded content / iframes | `build_embed_webpart` | Auto-routes YouTube, Documents |
 | Section separators | `build_divider_webpart` | — |
 | Any known modern web part type | `build_any_webpart` | Escape hatch for any type by GUID |
-| Last resort / unknown | `build_text_webpart` | Fallback — preserve content as formatted text |
+| Last resort / unknown | `build_text_webpart` | Fallback — preserve content as yellow-highlighted explanatory text |
 
 ---
 

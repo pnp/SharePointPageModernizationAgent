@@ -28,11 +28,13 @@ node test/test-safelinks.cjs
 4. For a single page, invoke the workflow in order: `extract-and-understand`, `transform-and-create`, then `compare-and-refine`.
 5. For a site-wide migration, invoke `migrate-site` with the source site URL and, when needed, a destination site URL.
 
+After discovery, `migrate-site` checks for existing matching CIM files under `pageunderstanding/`. When reusable CIMs exist, confirm once whether the user wants to skip page understanding for those pages or re-extract them.
+
 If the host does not automatically load project skills, read the corresponding `.claude/skills/<skill-name>/SKILL.md` file and follow it as the runbook.
 
 ## Key migration rules
 - Never fabricate ULS tags or GUIDs.
-- Never silently drop classic content; preserve unsupported or script-dependent content as explanatory text with modern alternatives.
+- Never silently drop classic content; preserve unsupported or script-dependent content as a yellow-highlighted explanatory text fallback with modern alternatives.
 
 ## Coding conventions
 

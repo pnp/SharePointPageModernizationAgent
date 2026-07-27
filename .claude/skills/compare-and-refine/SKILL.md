@@ -27,9 +27,12 @@ Read all files in `<git_repo_path>/.claude/knowledge/*.md` for known migration p
 
 1. **Extract the modern page:** Call `extract_page_data` on the **modern** destination page to get structural data (headings, links, images, text).
 
-2. **Build classic page data:** `extract_page_data` only works on modern pages — it returns "No content container found" on classic wiki/publishing pages. Instead, construct the classic comparison data from the `extract_classic_page` bundle you already have from Phase 1:
+2. **Build classic page data:** Do **not** call `extract_page_data` on the live classic page. Classic page chrome, list-view controls, duplicated web-part wrappers, and data-URI UI icons produce false headings, links, images, and web-part counts. Instead, construct the classic comparison data from the `extract_classic_page` bundle you already have from Phase 1:
    - Parse `wikiHtml` / `PublishingPageContent` to extract headings, links, images, and text
    - Include web part content from `webParts[].resolvedHtml` if present
+   - Exclude empty headings, `data:` images, SharePoint command-bar icons, edit/menu links, and other page chrome
+   - Deduplicate web parts by source ID; when no stable ID exists, deduplicate identical title + normalized content pairs
+   - Treat the underlying list URL/ID as the identity of a list web part, not its editable display title
    - Format as a JSON object matching the `extract_page_data` output schema: `{headings, links, images, imageCount, linkCount, textLength, textPreview, ...}`
 
 3. Call `compare_migration_quality` with both JSON results (`classicData` from step 2, `modernData` from step 1).
@@ -44,6 +47,14 @@ Read all files in `<git_repo_path>/.claude/knowledge/*.md` for known migration p
    - Do missing headings match a tile conversion pattern? (heading text → Quick Links tile label)
    - Are missing images decorative tile icons or actual content images?
    - Does a known knowledge file describe a higher-fidelity approach for any flagged content?
+
+6. **Apply the score sanity gate before persisting the result:**
+   - Normalize heading levels before matching (`h1` becoming `h2`, or `h2` becoming `h3`, is expected in modern pages)
+   - Check meaningful text coverage using normalized `textPreview` values
+   - If the reported score is below 50 while modern text coverage is at least 70%, or most non-empty classic headings are present, treat the result as a suspected extraction false negative
+   - For a suspected false negative, wait for SPFx rendering, re-run `extract_page_data` on the modern page once, rebuild the cleaned classic data, and call `compare_migration_quality` again
+   - If the second result is still contradictory, take a screenshot and report the comparison as **inconclusive**. Do not persist a misleading numeric score such as 0; set `comparisonScore` to `null`, explain the extraction mismatch in `comparisonSummary`, and add `"comparisonConfidence": "low"` to the CIM
+   - Persist `"comparisonConfidence": "high"` only when the structural score agrees with the text and heading checks
 
 ### Step 2: Refine (Knowledge-Driven Fixes)
 
@@ -89,6 +100,8 @@ If coverage < 80% or issues found:
 - **When interpreting results**: If the modern page uses primarily SPFx web parts and the text titles are present (check `textPreview`), a low link/image count is likely a **false negative**, not actual content loss.
 - **Always take a screenshot** for visual verification when SPFx web parts are involved — the screenshot is more reliable than structural comparison for these components.
 - **Consider the text match**: If `textPreview` contains all expected titles/labels and `missingPhrases` is empty, the content is likely present even if links/images show as missing.
+- A modern `webPartCount` of 0 does **not** prove that List, Quick Links, Hero, or other SPFx web parts are absent. Check their rendered labels and list-item text in `textPreview`.
+- Never let classic `data:` UI icons or duplicated wrapper nodes contribute to the content-image or web-part baseline.
 
 ---
 

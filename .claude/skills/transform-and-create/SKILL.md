@@ -144,20 +144,35 @@ for each zone in wikiZones:
       4. Use the `dataVersion` from the catalog example (typically `"1.0"`)
       5. Call `build_any_webpart` with the validated properties
       For cross-site list web parts (XsltListViewWebPart / ListViewWebPart):
-        - Resolve the DESTINATION site's equivalent library (e.g. source "Pages" → dest "Site Pages")
-        - Call `resolve_list_info(siteUrl, listTitle)` on the DESTINATION site to get the list ID, default view ID, and server-relative URL
+        - Identify the source list by its underlying `ListId`, `ListUrl`, or `TitleUrl` before considering the web part's display `title`. A display title such as "Documents" may actually point to `/Lists/Links`; never infer the list from the display title alone.
+        - For same-site migration, preserve the exact source list when it still exists. Resolve using the underlying list URL/title and verify that the returned ID or server-relative URL matches the CIM.
+        - For cross-site migration, resolve the DESTINATION site's intentional equivalent library (e.g. source "Pages" → dest "Site Pages"). If no unambiguous equivalent exists, preserve the source list content as links or a yellow-highlighted explanatory fallback rather than silently binding a different list.
+        - Call `resolve_list_info(siteUrl, listTitle)` on the DESTINATION site using the underlying list's resolved title (derived from its ID/URL), not the web part display title, to get the list ID, default view ID, and server-relative URL
         - Use build_any_webpart with:
           - webPartType: f92bf067-bc19-489e-a556-7fe95f508720
           - dataVersion: "1.0" (NOT "2.1" or other versions)
           - properties: { selectedListId, selectedViewId, selectedListUrl, listTitle } — use the values returned by resolve_list_info
           - Only include properties from the schema — do NOT add isDocumentLibrary, hideCommandBar, or other non-schema properties
-        - Do NOT fall back to text links or Quick Links — always create a real List web part
-    → Tier 3 (last resort): text web part noting the classic type + modern alternatives
+        - When the exact/equivalent list resolves unambiguously, create a real List web part rather than falling back to text links or Quick Links. Use fallback content only when no valid destination list exists.
+        - After building, confirm `selectedListId` and `selectedListUrl` identify the intended source/equivalent list. Reject mappings where only the display title matches.
+    → Tier 3 (last resort): yellow-highlighted text fallback noting the classic type + modern alternatives
   else if zone.html is not empty:
     → build_text_webpart with zone.html and sourceUrl
 ```
 
 Position-based matching: wpbox GUIDs in HTML don't match web part entry IDs — match by position index.
+
+#### Modern Fallback Notice Format
+
+All explanatory fallbacks for unsupported, script-dependent, or unresolved classic web parts must be visually distinct from migrated page content. Build them as a Text web part with the complete notice inside SharePoint's yellow RTE highlight:
+
+```html
+<p><span class="ms-rtebackcolor-3"><strong>Modern fallback — {classic web part title or type}</strong><br>
+This section previously provided {lost behavior}. It cannot run as-is on a modern SharePoint page.<br>
+<strong>Recommended modern alternative:</strong> {specific replacement or next step}.</span></p>
+```
+
+`build_text_webpart` converts `ms-rtebackcolor-3` to the modern `highlightColorYellow` class. Highlight the complete fallback notice, not only its heading. Do not use this treatment for ordinary migrated text.
 
 #### Standalone Web Parts (sourceWebPartId)
 
@@ -198,6 +213,8 @@ Example: MediaWebPart → `build_embed_webpart({ embedUrl: "...", embedType: "vi
 Before calling `create_modern_page`, check if a page with the target name already exists on the destination site. If it does, call `update_modern_page` with the existing page's ID. If the page exists but is currently checked out by another user, call `discardPage` to clear the checkout and retry the update. This ensures the migration process is resilient and can be re-run without manual cleanup.
 
 3. Call `create_modern_page` (or `update_modern_page` if updating) to write the draft page
+
+4. For pages containing List/SPFx web parts, call `extract_page_data` on the created page after rendering and verify that expected list titles or representative item labels appear in `textPreview`. Because SPFx detection can report `webPartCount: 0`, validate rendered content rather than relying on that count. If the expected content is absent or a different library is rendered, correct the list mapping before reporting success.
 
 ---
 
@@ -271,14 +288,12 @@ Web part page with text, a jQuery dashboard, and an image.
 
 3. Zone 2 → has <script> tags, can't convert directly
    → build_text_webpart(
-       <h3>⚠️ Interactive Dashboard</h3>
-       <p>This section contained a jQuery KPI dashboard that displayed live metrics.
-          JavaScript content cannot run in modern pages.</p>
-       <p><strong>Recommended alternatives:</strong></p>
-       <ul>
-         <li>Embed a Power BI dashboard for live KPI visualization</li>
-         <li>Build a custom SPFx web part to replicate the functionality</li>
-       </ul>)
+       <p><span class="ms-rtebackcolor-3"><strong>Modern fallback — Interactive Dashboard</strong><br>
+       This section contained a jQuery KPI dashboard that displayed live metrics.
+       JavaScript content cannot run in modern pages.<br>
+       <strong>Recommended modern alternatives:</strong> Embed a Power BI dashboard for
+       live KPI visualization, or build a custom SPFx web part to replicate the
+       functionality.</span></p>)
 
 4. Zone 3 → build_image_webpart("/sites/team/images/logo.png", altText: "Team logo")
 

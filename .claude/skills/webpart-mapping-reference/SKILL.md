@@ -93,9 +93,11 @@ When processing `wikiZones` during transformation:
 - **Web part zone** (non-empty `webPartIds`): find the matching web part in `content.webParts` by position index, then:
   1. **If `resolvedHtml` exists** (e.g., CEWP with fetched content): use `build_text_webpart` with the resolved HTML, or classify the content and use a richer web part (Quick Links, Image, etc.)
   2. **If `modernMapping` exists**: validate properties against the catalog schema before building (see **Property validation at transform time** above). Use the `modernMapping.builderTool` with `modernMapping.webPartId` and only schema-valid properties. For cross-site migrations where `crossSiteNote` warns about constraints, call `resolve_list_info` to resolve destination-site equivalents (list GUIDs, view GUIDs, URLs).
-  3. **Last resort only**: if neither `resolvedHtml` nor `modernMapping` is available AND the web part type is truly unknown, build a text web part noting the classic web part type and suggesting modern alternatives.
+  3. **Last resort only**: if neither `resolvedHtml` nor `modernMapping` is available AND the web part type is truly unknown, build a yellow-highlighted text fallback noting the classic web part type and suggesting modern alternatives.
 
 **Never silently skip embedded web parts** — the user should see what was there and what to do about it.
+
+For every explanatory fallback, wrap the complete notice in `<span class="ms-rtebackcolor-3">...</span>`. `build_text_webpart` converts this to SharePoint's native yellow `highlightColorYellow` formatting. Do not highlight ordinary migrated content.
 
 ---
 
@@ -156,7 +158,7 @@ ContentEditorWebPart (CEWP) is where AI adds the most value. These contain arbit
 ### JavaScript-Dependent Content
 
 **Signals:** `<script>` tags, `onclick` handlers, jQuery references, `SP.js` calls
-**Action:** `build_text_webpart` with an explanatory note. Cannot run scripts in modern pages.
+**Action:** `build_text_webpart` with the complete explanatory note wrapped in `<span class="ms-rtebackcolor-3">...</span>`. Cannot run scripts in modern pages.
 **Common alternatives:** See JavaScript Alternatives table below
 ---
 f

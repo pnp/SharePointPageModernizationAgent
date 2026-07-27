@@ -4,6 +4,7 @@ AI-powered classic SharePoint page → modern page migration using MCP tools.
 
 ## Getting started
 - **Always load the `migrate-site` skill first** at the start of any migration task, before any other skill. It is the entry-point orchestrator and routes to the phase skills (`extract-and-understand`, `transform-and-create`, `compare-and-refine`) as needed — even for a single page.
+- After discovery, if matching page-understanding JSON already exists, ask once whether to reuse those CIMs and skip extraction for those pages or re-extract them.
 
 ## Build & Test
 ```bash
@@ -19,7 +20,7 @@ cd mcp-server && node test/test-safelinks.cjs  # verify HTML sanitizer
 
 ## Key migration rules
 - Never fabricate ULS tags or GUIDs.
-- Never silently drop classic content; preserve unsupported or script-dependent content as explanatory text with modern alternatives.
+- Never silently drop classic content; preserve unsupported or script-dependent content as a yellow-highlighted explanatory text fallback with modern alternatives.
 
 ## Coding Conventions
 - TypeScript strict mode
