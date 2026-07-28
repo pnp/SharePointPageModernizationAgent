@@ -8,203 +8,128 @@ model: sonnet
 
 Orchestrate end-to-end migration of all classic pages in a SharePoint site to modern pages. This skill discovers pages, extracts CIMs, migrates each page in parallel (up to 5 at a time), scores quality, and produces a final summary with refinement recommendations.
 
-**Be fully autonomous.** Ask once after discovery when valid existing CIMs require a reuse decision. Otherwise, do not ask questions unless there is an actual blocker (e.g., destination site URL is unknown for a publishing site that does **not** have the Site Pages feature activated). Make reasonable decisions and keep moving.
+**Be fully autonomous.** Ask once after discovery when valid existing CIMs require a reuse decision. Otherwise, do not ask questions unless there is an actual blocker (for example, the destination site URL is unknown for a publishing site that does **not** have the Site Pages feature activated).
 
 ---
 
 ## Hard Rule: Always Dispatch Subagents
 
-**Every `extract-and-understand` and `transform-and-create` invocation run inside a dispatched subagent (`Agent` tool), one subagent per page.
+Every `extract-and-understand` and `transform-and-create` invocation must run inside a dispatched subagent (`Agent` tool), with one subagent per page.
 
 ### Model selection when dispatching subagents
 
-Subagents do NOT inherit the orchestrator's model selection, so specify the model explicitly when spawning each per-page task:
+Subagents do **not** inherit the orchestrator's model, so specify it explicitly for every per-page task:
+- **Claude Code:** already specified in `SKILL.md`
+- **GitHub Copilot CLI:** use the **fast model** with `reasoning_effort: "medium"` when calling the Task tool (for example, an economic/fast model such as gpt-luna or mini)
 
-- **Claude Code:** already specified in skill.md
-- **GitHub Copilot CLI:** pass the **fast model** and **medium** reasoning effort when calling the Task tool (e.g. `model` set to the fast/economic model, gpt-luna or mini, `reasoning_effort: "medium"`).
+---
 
 ## Workflow
 
 ### Phase 1: Plan — Discover & Extract All Pages
 
-1. **Discover pages** — Call `list_site_pages` with the source site URL
-   - Use `library: "both"` to find pages in both SitePages and Pages libraries
-   - Use `includeModernPages: false` to skip pages that are already modern
-   - Present the page list to the user as a summary table (name, type, library)
-
-2. **Determine destination site** — Modern pages live in a **Site Pages** library, which only exists when the **Site Pages** (site collection) feature is activated.
-   - **Same-site migration is preferred when possible.** Even for publishing sites, if the **Site Pages** feature is activated on the source site, modern pages can be created **in the same site** — no separate destination is needed.
-   - To detect this, check whether the source site exposes a Site Pages library: call `list_site_pages` with `library: "both"` (a non-empty/queryable `SitePages` entry) or `resolve_list_info(siteUrl, "Site Pages")`. If it resolves, the feature is activated and the destination is the **same site**.
-   - Only when the source is a publishing site **and** the Site Pages feature is **not** activated (no Site Pages library) must the user supply a separate destination site URL. If it is unknown in that case, ask the user for it.
-
-3. **Check for existing page-understanding JSON** — Before dispatching any extraction tasks:
-   - Derive each discovered page's expected CIM path: `pageunderstanding/<sitename>/<page-name-without-aspx>.json`
-   - Check which expected files already exist
-   - Parse each existing file and verify that it is reusable:
-     - Valid JSON object with `schemaVersion`, `source`, and `content`
-     - `source.siteUrl` identifies the discovered source site
-     - `source.pageName` identifies the discovered classic page
-   - Treat invalid, unreadable, or source-mismatched files as non-reusable and re-extract those pages automatically. Report why they were rejected.
-   - If one or more reusable CIMs exist, present them in a table with page name, `extractedAt`, and `migrationStatus`, then ask the user **once** how to handle those pages:
+1. **Discover pages** with `list_site_pages(sourceSiteUrl)`:
+   - use `library: "both"` to include both Site Pages and Pages
+   - use `includeModernPages: false` to skip already-modern pages
+   - present the page list as a summary table (name, type, library)
+2. **Determine the destination site.** Same-site migration is preferred when possible, including publishing sites whose source site already has the **Site Pages** feature activated.
+   - Detect this by checking whether the source site exposes a Site Pages library via `list_site_pages(..., library: "both")` or `resolve_list_info(siteUrl, "Site Pages")`
+   - If Site Pages resolves, use the **same site** as the destination
+   - Ask for a separate destination site URL only when the source is a publishing site **and** Site Pages is not activated
+3. **Check for existing page-understanding JSON before dispatching extraction tasks.** For each discovered page:
+   - derive `pageunderstanding/<sitename>/<page-name-without-aspx>.json`
+   - treat a file as reusable only if it is valid JSON with `schemaVersion`, `source`, and `content`, and `source.siteUrl` / `source.pageName` match the discovered page
+   - automatically reject invalid, unreadable, or source-mismatched files and report why they were rejected
+   - if any reusable CIMs exist, present a table with page name, `extractedAt`, and `migrationStatus`, then ask the user **once** how to handle them:
      1. **Reuse all existing CIMs and skip page understanding (recommended)**
      2. **Re-extract all pages that already have CIMs**
      3. **Choose which existing CIMs to reuse**
-   - If the user chooses individual pages, ask one follow-up question for the page names. Reuse only those selections and re-extract the remaining pages.
-   - If no reusable CIM exists, do not ask; continue directly to extraction.
-
-4. **Extract pages that are not being reused** — For each classic page without a reusable/selected CIM:
-   - Invoke the `extract-and-understand` skill for that page
-   - **Important:** Extract and save the CIM only — do NOT auto-handoff to `transform-and-create`
-   - The `extract-and-understand` skill saves a CIM JSON file at `pageunderstanding/<sitename>/<pagename>.json`
-
-5. **Mark CIMs as planned** — After each successful extraction, and for each existing CIM selected for reuse, update the CIM JSON file:
-   - Add `"migrationStatus": "planned"` at the top level
-   - Add `"plannedAt": "<ISO timestamp>"` at the top level
-   - Reusing a CIM skips only `extract-and-understand`; the page still proceeds through transform, create/update, and comparison
-   - If extraction fails, set `"migrationStatus": "error"`, `"error": "<message>"`, `"lastAttemptAt": "<ISO timestamp>"` and continue with the next page
-
-6. **Report plan summary** — Display:
-   - Total pages found vs. successfully extracted
-   - Pages reusing existing CIMs vs. pages freshly extracted
-   - Any pages that failed extraction (with error details)
-   - Then proceed directly to Phase 2
+   - if the user chooses individual pages, ask one follow-up question for the page names; reuse only those and re-extract the rest
+   - if no reusable CIMs exist, do not ask anything and continue
+4. **Extract only pages that are not being reused.** For each classic page without a reusable/selected CIM:
+   - invoke `extract-and-understand`
+   - extract and save the CIM only; do **not** auto-handoff to `transform-and-create`
+5. **Mark CIMs as planned.** After each successful extraction, and for each existing CIM selected for reuse, update the file with:
+   - `"migrationStatus": "planned"`
+   - `"plannedAt": "<ISO timestamp>"`
+   - reuse skips only `extract-and-understand`; the page still goes through transform, create/update, and comparison
+   - if extraction fails, set `"migrationStatus": "error"`, `"error": "<message>"`, and `"lastAttemptAt": "<ISO timestamp>"`, then continue
+6. **Report the plan summary** with totals, reused vs freshly extracted CIMs, and any extraction failures, then proceed directly to Phase 2.
 
 ### Phase 2: Migrate & Score — Parallel Page Migration
 
-Process all planned pages by spawning parallel tasks (up to 5 concurrent). Each task handles one page end-to-end: transform → create → compare → score.
+Process all planned pages in parallel, up to **5 concurrent tasks**. Each task handles one page end-to-end.
 
-#### Per-Page Task
+#### Per-page task
 
-Each spawned task does the following for a single page:
-
-1. **Invoke `transform-and-create`** — Reads the CIM file and creates the modern page
-   - Do NOT ask the user any questions — make autonomous decisions on layout, web part choices, page naming
-   - If a page with the same name already exists, update it (do not prompt)
-
-2. **Update CIM on success** — After the modern page is created:
+1. **Invoke `transform-and-create`.** Read the CIM and create or update the modern page. Do not ask the user about layout, web part choices, or page naming.
+2. **Update the CIM on create/update success** with:
    - `"migrationStatus": "migrated"`
    - `"migratedAt": "<ISO timestamp>"`
    - `"modernPageId": "<page ID from Graph API>"`
    - `"modernPageUrl": "<page web URL>"`
    - `"destinationSiteUrl": "<destination site URL>"`
-
-3. **Invoke `compare-and-refine`** — Compare only, do NOT refine
-   - Build cleaned classic comparison data from the Phase 1 extraction bundle; do **not** structurally extract the live classic page because classic chrome and duplicate wrappers distort counts
-   - Extract the modern page, then run `compare_migration_quality`
-   - Apply the `compare-and-refine` score sanity gate. Re-extract once when a score below 50 contradicts strong text or heading coverage
-   - Record the comparison score but do NOT iterate or fix issues
-   - If the comparison remains contradictory, record `comparisonScore: null` and `comparisonConfidence: "low"` with an inconclusive summary instead of a misleading zero
-   - Update the CIM with:
-     - `"comparisonScore": <0-100 number or null when inconclusive>`
-     - `"comparisonConfidence": "high" | "low"`
-     - `"comparisonSummary": "<brief text: what's missing>"`
-     - `"comparedAt": "<ISO timestamp>"`
-
-4. **On failure** — If any step fails:
-   - `"migrationStatus": "error"`
-   - `"error": "<error message>"`
-   - `"lastAttemptAt": "<ISO timestamp>"`
-   - The task ends — failure does not affect other tasks
+3. **Invoke `compare-and-refine` in compare-only mode.**
+   - build cleaned classic comparison data from the Phase 1 extraction bundle; do **not** structurally extract the live classic page
+   - extract the modern page, run `compare_migration_quality`, and apply the `compare-and-refine` score sanity gate
+   - if a score below 50 conflicts with strong text or heading coverage, re-extract once before deciding
+   - do **not** iterate or fix issues in this phase
+   - if the comparison remains contradictory, record `comparisonScore: null` and `comparisonConfidence: "low"` with an inconclusive summary instead of a misleading zero
+   - update the CIM with `comparisonScore`, `comparisonConfidence`, `comparisonSummary`, and `comparedAt`
+4. **On failure,** set `"migrationStatus": "error"`, `"error": "<error message>"`, and `"lastAttemptAt": "<ISO timestamp>"`. The failed page stops; other pages continue.
 
 #### Parallelism
 
-- Use the Task tool to spawn up to **5 concurrent tasks** at a time
-- When dispatching each task, set its model explicitly (see **Model selection when dispatching subagents**): `sonnet` for Claude Code; the **fast model** with **medium** reasoning effort for GitHub Copilot CLI
-- When a task completes, spawn the next pending page's task (maintain up to 5 in flight)
-- Wait for all tasks to complete before proceeding to Phase 3
-- A Phase 1 task is usually expected to take 1-2 minutes, a phase 2 task is usually expected to take less than 5 minutes depending on page complexity. If a Phase 1 task takes longer than 5 minutes or a Phase 2 task takes longer than 10 minutes, check it proactively for issues.
+- Use the Task tool to keep up to **5** page tasks in flight
+- Set the model explicitly for every dispatched task as described above
+- Start the next pending page whenever a slot frees up
+- Wait for all tasks before Phase 3
+- A Phase 1 task normally takes 1–2 minutes and a Phase 2 task usually takes under 5 minutes; if Phase 1 exceeds 5 minutes or Phase 2 exceeds 10 minutes, check it proactively
 
 ### Phase 3: Summary Report
 
-After all pages have been processed, call `get_comparison_summary` with the page-understanding site directory path to retrieve all comparison scores and summaries in a single lightweight call. Then produce the report:
-
-#### Migration Summary Table
-
-| Page | Type | Status | Score | Issues |
-|------|------|--------|-------|--------|
-| page1.aspx | wiki | migrated | 92% | — |
-| page2.aspx | publishing | migrated | 65% | Missing 3 links, 1 image |
-| page3.aspx | webpart | error | — | Auth timeout |
-
-#### Statistics
-
-- Total pages discovered
-- Pages successfully migrated
-- Pages with errors
-- Average comparison score
-
-#### Refinement Recommendations
-
-For each migrated page with a comparison score below 95%, or with notable missing content:
-
-- **Page name** — score, what's missing, and a recommendation
+After all pages finish, call `get_comparison_summary` with the page-understanding site directory path, then report:
+- a migration summary table with page, type, status, score, and issues
+- totals for discovered pages, successfully migrated pages, pages with errors, and the average comparison score
+- refinement recommendations for every migrated page below 95% or with notable missing content
 
 ---
 
 ## CIM Status Fields
 
-These fields are added to the top level of each CIM JSON file to track migration progress:
+Add or maintain these top-level fields in each CIM JSON file:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `migrationStatus` | `"planned" \| "migrated" \| "error"` | Current status of the page migration |
+| `migrationStatus` | `"planned" \| "migrated" \| "error"` | Current migration state |
 | `plannedAt` | ISO 8601 string | When the CIM was created/planned |
 | `migratedAt` | ISO 8601 string | When the modern page was created |
-| `modernPageId` | string | Graph API page ID of the modern page |
-| `modernPageUrl` | string | Web URL of the modern page |
+| `modernPageId` | string | Graph API page ID |
+| `modernPageUrl` | string | Modern page web URL |
 | `destinationSiteUrl` | string | Site URL where the modern page was created |
-| `comparisonScore` | number (0–100) | Content coverage score from structural comparison |
+| `comparisonScore` | number (0–100) or `null` | Structural comparison score |
+| `comparisonConfidence` | `"high" \| "low"` | Confidence in the comparison result |
 | `comparisonSummary` | string | Brief summary of comparison findings |
-| `comparedAt` | ISO 8601 string | When the comparison was performed |
-| `error` | string | Error message from the last failed attempt |
+| `comparedAt` | ISO 8601 string | When comparison ran |
+| `error` | string | Error from the last failed attempt |
 | `lastAttemptAt` | ISO 8601 string | When the last failed attempt occurred |
 
 ---
 
 ## Autonomy Rules
 
-During the entire migration, do NOT ask the user about:
+Do **not** ask the user about:
+- layout choices
+- which web part type to use
+- whether to skip empty/placeholder web parts
+- page naming (`same name` cross-site, `-migrated` same-site)
+- page conflicts (update existing pages automatically)
+- whether to proceed after planning
 
-- Layout choices — use the CIM's `modernMapping` or best-match layout
-- Which web part type to use — follow classification rules
-- Whether to skip empty/placeholder web parts — skip automatically
-- Page naming — use same name for cross-site, `-migrated` suffix for same-site
-- Page conflicts — update existing pages automatically
-- Whether to proceed after planning — just proceed
-
-**Allowed user confirmations:**
-
-- Destination site URL is unknown for a publishing site migration **where the Site Pages feature is not activated** (no Site Pages library, so modern pages cannot be created in the same site)
-- Authentication failure that cannot be retried
-- One grouped decision about whether to reuse valid existing page-understanding JSON files, as defined in Phase 1 Step 3
-
----
-
-## Example
-
-```
-User: "Migrate https://contoso.sharepoint.com/sites/pub1 to https://contoso.sharepoint.com/sites/pub1-modern"
-
-Phase 1 — Plan:
-  list_site_pages → found 8 classic pages
-  extract-and-understand × 8 → 8 CIMs saved as "planned"
-
-Phase 2 — Migrate & Score (5 parallel):
-  [task 1] pubSample1 → transform → create → compare → score: 91%
-  [task 2] pubSample2 → transform → create → compare → score: 78%
-  [task 3] pubSample3 → transform → create → compare → score: 85%
-  [task 4] pubSample4 → transform → create → error: "timeout"
-  [task 5] pubSample5 → transform → create → compare → score: 44%
-  ... (tasks 6-8 start as slots free up)
-
-Phase 3 — Summary:
-  7/8 migrated, 1 error
-  Average score: 76%
-  Recommendations:
-    - pubSample2 (78%): Run compare-and-refine — missing 2 navigation links
-    - pubSample4: Retry migration — failed due to timeout
-    - pubSample5 (44%): Run compare-and-refine — missing hero banner and 5 links
-```
+Only these confirmations are allowed:
+- the destination site URL is unknown for a publishing site migration where the Site Pages feature is not activated
+- an authentication failure cannot be retried
+- the single grouped decision about reusing valid existing page-understanding JSON files from Phase 1 Step 3
 
 ---
 
@@ -213,16 +138,16 @@ Phase 3 — Summary:
 | Tool | Purpose |
 |------|---------|
 | `list_site_pages(siteUrl, library?, includeModernPages?)` | Discover all pages in a site |
-| `extract_classic_page(siteUrl, pageName)` | Extract a single classic page (used via extract-and-understand skill) |
-| `find_modern_page(siteUrl, pageName)` | Check if a modern page already exists |
-| `get_comparison_summary(directory)` | Load all comparison scores/summaries from a page-understanding directory |
+| `extract_classic_page(siteUrl, pageName)` | Extract a single classic page (used via `extract-and-understand`) |
+| `find_modern_page(siteUrl, pageName)` | Check whether a modern page already exists |
+| `get_comparison_summary(directory)` | Load all comparison scores and summaries from a page-understanding directory |
 
 ### Skills Invoked
 
-Each sub-agent should load **only its own skill** — skills are self-contained and do not need to reference each other.
+Each subagent should load **only its own skill**.
 
 | Skill | Phase | Where it runs | Notes |
 |-------|-------|---------------|-------|
 | `extract-and-understand` | Phase 1 | Inside a per-page subagent | Extract + CIM only, no handoff to transform |
 | `transform-and-create` | Phase 2 | Inside a per-page subagent | Reads CIM, creates modern page |
-| `compare-and-refine` | Phase 2 | Inside the SAME per-page subagent (after transform) | Compare only (no refinement), produces score |
+| `compare-and-refine` | Phase 2 | Inside the **same** per-page subagent after transform | Compare only, no refinement |

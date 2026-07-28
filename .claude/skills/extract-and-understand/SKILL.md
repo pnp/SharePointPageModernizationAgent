@@ -12,23 +12,16 @@ Extract a classic SharePoint page (wiki, web part page, or publishing page), cla
 
 ---
 
-## Principles
+## Core Rules
 
-1. **Understand intent, not just tags.** Classify by WHAT the content is trying to DO.
-2. **Try your best.** A creative approximation beats a bland fallback. Use `build_any_webpart` as escape hatch.
-3. **Be honest about limits.** JavaScript-dependent content can't run in modern pages. Preserve as text with alternatives.
-4. **Never silently drop content.**
-5. **Be autonomous.** Make reasonable decisions without asking the user.
-
----
-
-## When to Ask the User
-
-Only ask when you **cannot proceed**:
-- **Destination site URL is unknown** for a publishing site migration **where the Site Pages feature is not activated**
-- **Genuinely ambiguous content** that would significantly impact the result
-
-Do NOT ask about layout choices, web part type, skipping empty web parts, or page naming.
+- **Understand intent, not just tags.** Classify by what the content is trying to do.
+- **Try your best.** A creative approximation beats a bland fallback; use `build_any_webpart` as the escape hatch.
+- **Be honest about limits.** JavaScript-dependent content cannot run in modern pages. Preserve it as text with alternatives.
+- **Never silently drop content.**
+- **Be autonomous.** Ask only when you cannot proceed:
+  - the destination site URL is unknown for a publishing site migration where the Site Pages feature is not activated
+  - the content is genuinely ambiguous in a way that would materially change the result
+- Do **not** ask about layout choices, web part type, skipping empty web parts, or page naming.
 
 ---
 
@@ -36,29 +29,28 @@ Do NOT ask about layout choices, web part type, skipping empty web parts, or pag
 
 ### Step 0: Extract & Build CIM
 
-1. Call `extract_classic_page` with the site URL and page name
-2. Build a **CIM (Canonical Intermediate Model)** from the extracted bundle — a structured summary of:
-   - What type of page is it? (wiki / web part page / publishing)
-   - Page title, type (wiki / web part page / publishing), author, and layout
-   - Content zones or wiki zones with their HTML content
-   - Web parts found (type, title, resolved content), does any content have scripts?
-   - For publishing pages: field controls from the layout ASPX, web part zones and column widths, publishing field values (images, byline, dates)
-   - If the bundle has `publishingLayoutHtml`, this is hardcoded content from the page layout ASPX template (not stored in publishing fields or web parts). Analyze this HTML to identify content blocks (headings, navigation tiles, link grids, images, CTAs). This content is shared by ALL pages using this layout — it is template-level, not page-specific.
-   - Proposed migration plan: what each content block / field / zone becomes in modern (text web part, image web part, quick links, etc.)
-   - **Cross-tenant asset detection:** If the destination site is on a different tenant, call `discover_page_assets(siteUrl, pageName, destSiteUrl)` to get a structured inventory of all referenced assets (images, CSS, JS) classified as cross-tenant or same-tenant. Include the `crossTenantAssets` count and list in the CIM. Server-relative URLs (e.g., `/sites/pub1/images/photo.jpg`) only resolve within the same tenant.
-3. For each content block, classify by intent using the [CEWP Content Classification](#cewp-content-classification) rules. For each web part, understand what it's doing:
-   - Consult the [Web Part Mapping Reference](#web-part-mapping-reference) table below to determine the modern equivalent
-   - Look at the actual HTML content — what is the user trying to accomplish?
-   - Consider the page as a whole — is this a dashboard? A wiki article? A landing page?
-4. **Present a brief CIM summary** to the user (page type, section count, key decisions) as informational output — but do NOT wait for confirmation. Proceed immediately to saving and handing off.
+1. Call `extract_classic_page(siteUrl, pageName)`.
+2. Build a CIM from the extracted bundle that captures:
+   - page title, type (`wiki` / `webpart` / `publishing`), author, and layout
+   - content zones or wiki zones with their HTML
+   - web parts found (type, title, resolved content) and whether any content contains scripts
+   - for publishing pages: field controls from the layout ASPX, web part zones and column widths, and publishing field values such as images, byline, and dates
+   - if `publishingLayoutHtml` is present, analyze it as hardcoded page-layout ASPX content shared by every page using that layout; identify headings, navigation tiles, link grids, images, CTAs, and similar template-level blocks
+   - the proposed migration plan for each content block / field / zone (text web part, image web part, Quick Links, and so on)
+   - **cross-tenant asset detection:** when the destination site is on a different tenant, call `discover_page_assets(siteUrl, pageName, destSiteUrl)` and include the `crossTenantAssets` count and list in the CIM. Server-relative URLs (for example, `/sites/pub1/images/photo.jpg`) resolve only within the same tenant.
+3. Classify each content block by intent using [CEWP Content Classification](#cewp-content-classification):
+   - consult the [Web Part Mapping Reference](#web-part-mapping-reference) table below for the modern equivalent
+   - inspect the actual HTML content to understand what the user is trying to accomplish
+   - consider the page as a whole (dashboard, wiki article, landing page, and so on)
+4. Present a brief CIM summary to the user (page type, section count, key decisions) as informational output, but do **not** wait for confirmation; proceed immediately to saving and handoff.
 
 ### Step 1: Save CIM to File
 
-1. File path: `<git_repo_path>\pageunderstanding\<sitename>\<pagename>.json`
-   - `<sitename>`: derive from site URL path, replace `/` with `-` (e.g., `/sites/pub1` → `sites-pub1`)
+1. Save to `<git_repo_path>\pageunderstanding\<sitename>\<pagename>.json`
+   - `<sitename>`: derive from the site URL path and replace `/` with `-` (for example, `/sites/pub1` → `sites-pub1`)
    - `<pagename>`: page name without `.aspx`
-2. Create `pageunderstanding/<sitename>/` if needed
-3. Always overwrite existing files without reading them (do not attempt to merge or preserve any existing data)
+2. Create `pageunderstanding/<sitename>/` if needed.
+3. Always overwrite existing files without reading or merging them.
 
 ### CIM Schema
 
@@ -88,11 +80,11 @@ Do NOT ask about layout choices, web part type, skipping empty web parts, or pag
 | `text` | `value` | `build_text_webpart(<p>{value}</p>)` |
 | `dateTime` | `value`, `isoDate` | `build_text_webpart(<p>{value}</p>)` |
 
-**Web part modernMapping** — for each web part in `content.webParts`, consult `get_webpart_mapping_hints` and add a `modernMapping` with the correct schema properties. See the **webpart-mapping-reference** skill for the authoritative List web part property schema and examples.
+**Web part `modernMapping`:** For each web part in `content.webParts`, consult `get_webpart_mapping_hints` and add a `modernMapping` with the correct schema properties. See the `webpart-mapping-reference` skill for the authoritative List web part property schema and examples.
 
-**Zone-aware hints** — when PublishingPageContent or WikiField contains embedded web parts, the `transformationHints` note must reference the concrete `modernMapping` strategy (not "render as placeholder").
+**Zone-aware hints:** When `PublishingPageContent` or `WikiField` contains embedded web parts, the `transformationHints` note must reference the concrete `modernMapping` strategy, not “render as placeholder”.
 
-**HTML table layout detection** — when `PublishingPageContent` uses an outer `<table>` (typically `class="ms-rteTable-*"` or `width="100%"`) for multi-column layout, the CIM `transformationHints` MUST capture the table structure:
+**HTML table layout detection:** When `PublishingPageContent` uses an outer `<table>` (typically `class="ms-rteTable-*"` or `width="100%"`) for multi-column layout, the CIM `transformationHints` **must** capture that structure:
 
 ```json
 {
@@ -109,15 +101,15 @@ Do NOT ask about layout choices, web part type, skipping empty web parts, or pag
 }
 ```
 
-This ensures `transform-and-create` builds multi-column modern sections instead of flattening everything into `oneColumn`. Inspect the top-level table's `<td>` width styles or proportions to determine the column ratio.
+This ensures `transform-and-create` builds multi-column modern sections instead of flattening everything into `oneColumn`. Inspect the top-level table's `<td>` widths or proportions to determine the column ratio.
 
-**Image dimensions** — for every image in `contentBlocks` or `publishingFields`, capture `imgWidth` and `imgHeight` (in pixels) from the extracted data. The classic page extraction provides `naturalWidth`/`naturalHeight` or explicit `width`/`height` attributes. These dimensions are **required** for the Image web part to render correctly — without them, the image may collapse to 0×0.
+**Image dimensions:** For every image in `contentBlocks` or `publishingFields`, capture `imgWidth` and `imgHeight` from the extracted data. The classic extraction already provides `naturalWidth`/`naturalHeight` or explicit `width`/`height` attributes, and the Image web part needs these values to avoid collapsing to `0×0`.
 
 ---
 
 ## Web Part Mapping Reference
 
-Sorted by usage. Tier: 1=Direct, 2=Conditional, 3=Complex, 4=No OOB (SPFx needed), 5=Deprecated/Dropped.
+Sorted by usage. Tier: 1 = Direct, 2 = Conditional, 3 = Complex, 4 = No OOB (SPFx needed), 5 = Deprecated/Dropped.
 
 | # | Classic Web Part | Modern Target | Builder Tool | Tier | Notes |
 |---|---|---|---|---|---|
@@ -170,29 +162,16 @@ Sorted by usage. Tier: 1=Direct, 2=Conditional, 3=Complex, 4=No OOB (SPFx needed
 
 ContentEditorWebPart (CEWP) contains arbitrary HTML. Classify by intent:
 
-### Navigation / Link Lists
-**Signals:** `<ul>` or `<ol>` where most `<li>` contain `<a>` tags
-**Action:** `build_quick_links_webpart` — extract link text and URLs
+| Pattern | Signals | Action |
+|---|---|---|
+| Navigation / Link Lists | `<ul>` or `<ol>` where most `<li>` contain `<a>` tags | `build_quick_links_webpart` — extract link text and URLs |
+| Embedded Content | `<iframe>`, `<embed>`, `<object>` tags | `build_embed_webpart` with the `src` URL. YouTube URLs auto-route to the YouTube web part. |
+| Image Galleries / Hero Images | Multiple `<img>` tags, or one large image with overlay text | Single image → `build_image_webpart`; multiple images → `build_any_webpart` with Image Gallery; image with text overlay → Hero via `build_any_webpart` |
+| Data Tables | `<table>` with `<thead>` and `<tbody>` | `build_text_webpart` — modern text web parts render tables well |
+| Styled Banners / Announcements | Large text, colored backgrounds, call-to-action buttons | Hero or Call to Action via `build_any_webpart`, or `build_text_webpart` |
+| JavaScript-Dependent Content | `<script>`, `onclick`, jQuery references, `SP.js` calls | `build_text_webpart` fallback whose complete explanatory note is wrapped in `<span class="ms-rtebackcolor-3">...</span>` |
 
-### Embedded Content
-**Signals:** `<iframe>`, `<embed>`, `<object>` tags
-**Action:** `build_embed_webpart` with the `src` URL. YouTube URLs auto-route to the YouTube web part.
-
-### Image Galleries / Hero Images
-**Signals:** Multiple `<img>` tags, or a single large image with overlay text
-**Action:** Single image → `build_image_webpart`. Multiple images → `build_any_webpart` with Image Gallery. Image with text overlay → Hero via `build_any_webpart`.
-
-### Data Tables
-**Signals:** `<table>` with `<thead>` and `<tbody>`, structured data rows
-**Action:** `build_text_webpart` — modern text web parts render tables well
-
-### Styled Banners / Announcements
-**Signals:** Large text, colored backgrounds, call-to-action buttons
-**Action:** Hero or Call to Action via `build_any_webpart`, or `build_text_webpart`
-
-### JavaScript-Dependent Content
-**Signals:** `<script>` tags, `onclick` handlers, jQuery references, `SP.js` calls
-**Action:** Plan a `build_text_webpart` fallback whose complete explanatory note is wrapped in `<span class="ms-rtebackcolor-3">...</span>` for native yellow highlighting. Scripts cannot run in modern pages.
+Scripts cannot run in modern pages.
 
 ---
 
@@ -211,20 +190,15 @@ ContentEditorWebPart (CEWP) contains arbitrary HTML. Classify by intent:
 
 ---
 
-## Troubleshooting
+## Troubleshooting & Tools
 
-- If `extract_classic_page` errors, verify site URL and page name
+- If `extract_classic_page` fails, verify the site URL and page name.
 - Publishing sites can host modern pages **only when the Site Pages feature is activated** (a Site Pages library exists). If activated, migrate in the same site; otherwise the user must specify a separate destination site.
-- Permission errors → app needs `Sites.Read.All` minimum
-
----
-
-## MCP Tools Used
+- Permission errors mean the app needs at least `Sites.Read.All`.
+- `extract_page_data` (used in `compare-and-refine`) only works on **modern** pages. It returns `No content container found` on classic wiki/publishing pages. Always use `extract_classic_page` for source extraction.
 
 | Tool | Purpose |
 |------|---------|
 | `extract_classic_page(siteUrl, pageName)` | Extract classic page content (WikiField HTML, web parts, resolved CEWP content) |
-| `get_modern_webpart_catalog(apiVersion?)` | Discover all available modern web parts with schemas |
-| `discover_page_assets(siteUrl, pageName, destSiteUrl?)` | Scan page for all referenced assets; classify cross-tenant vs same-tenant |
-
-> **Note:** `extract_page_data` (used in the compare-and-refine phase) only works on **modern** pages. It returns "No content container found" on classic wiki/publishing pages. Always use `extract_classic_page` for source page extraction. Use `extract_page_data` only for verifying the migrated modern destination page.
+| `get_modern_webpart_catalog(apiVersion?)` | Discover available modern web parts with schemas |
+| `discover_page_assets(siteUrl, pageName, destSiteUrl?)` | Scan page assets and classify cross-tenant vs same-tenant |
