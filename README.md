@@ -4,6 +4,14 @@ AI-assisted migration of **classic SharePoint pages** (wiki, web part, publishin
 
 ---
 
+## Demo
+
+<video src="https://github.com/pnp/SharePointPageModernizationAgent/releases/download/demo-video/Demo.mp4" controls>
+  <a href="https://github.com/pnp/SharePointPageModernizationAgent/releases/download/demo-video/Demo.mp4">Watch the demo video</a>
+</video>
+
+---
+
 ## Why use it
 
 Classic pages can't be opened in the modern editor and miss out on modern features (responsive layout, modern web parts, Viva, Copilot surfaces). Microsoft already provides a deterministic [PnP page transformation](https://learn.microsoft.com/sharepoint/dev/transform/modernize-classic-pages) pipeline — if that meets your needs, **use it**.
