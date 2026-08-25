@@ -6,9 +6,7 @@ AI-assisted migration of **classic SharePoint pages** (wiki, web part, publishin
 
 ## Demo
 
-<video src="https://github.com/pnp/SharePointPageModernizationAgent/releases/download/demo-video/Demo.mp4" controls>
-  <a href="https://github.com/pnp/SharePointPageModernizationAgent/releases/download/demo-video/Demo.mp4">Watch the demo video</a>
-</video>
+[Watch the demo video](https://github.com/pnp/SharePointPageModernizationAgent/releases/download/demo-video/Demo.mp4)
 
 ---
 
