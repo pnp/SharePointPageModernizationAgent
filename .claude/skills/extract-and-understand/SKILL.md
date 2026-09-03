@@ -29,7 +29,7 @@ Extract a classic SharePoint page (wiki, web part page, or publishing page), cla
 
 ### Step 0: Extract & Build CIM
 
-1. Call `extract_classic_page(siteUrl, pageName)`.
+1. Call `extract_classic_page(siteUrl, pageName)` once. The MCP tool retries a failed extraction two times (three total attempts) before returning an error.
 2. Build a CIM from the extracted bundle that captures:
    - page title, type (`wiki` / `webpart` / `publishing`), author, and layout
    - content zones or wiki zones with their HTML
@@ -192,7 +192,7 @@ Scripts cannot run in modern pages.
 
 ## Troubleshooting & Tools
 
-- If `extract_classic_page` fails, verify the site URL and page name.
+- `extract_classic_page` retries a failed extraction two times before it returns an error. Do not invoke it again manually; after all three attempts fail, verify the site URL and page name.
 - Publishing sites can host modern pages **only when the Site Pages feature is activated** (a Site Pages library exists). If activated, migrate in the same site; otherwise the user must specify a separate destination site.
 - Permission errors mean the app needs at least `Sites.Read.All`.
 - `extract_page_data` (used in `compare-and-refine`) only works on **modern** pages. It returns `No content container found` on classic wiki/publishing pages. Always use `extract_classic_page` for source extraction.

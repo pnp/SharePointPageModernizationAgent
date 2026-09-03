@@ -6,6 +6,7 @@ import { getSharePointCookies } from '../sharepoint/auth.js';
 import { sanitizeHtml } from '../utils/html-sanitizer.js';
 import { parsePublishingLayout, extractHardcodedHtml } from '../utils/publishing-layout-parser.js';
 import { logger } from '../utils/logger.js';
+import { retryOperation } from '../utils/retry.js';
 import type { ClassicPageBundle, ClassicWebPartInfo, WikiZone, WebPartZone } from '../types/classic.js';
 
 /** GUID regex matching patterns like {GUID} or bare GUIDs in class/id attributes. */
@@ -786,7 +787,10 @@ export function registerExtractTool(server: McpServer): void {
     },
     async ({ siteUrl, pageName }) => {
       try {
-        const bundle = await extractClassicPageBundle(siteUrl, pageName);
+        const bundle = await retryOperation(
+          'extract_classic_page',
+          () => extractClassicPageBundle(siteUrl, pageName),
+        );
         return { content: [{ type: 'text' as const, text: JSON.stringify(bundle, null, 2) }] };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

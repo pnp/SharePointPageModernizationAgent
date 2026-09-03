@@ -48,6 +48,7 @@ Subagents do **not** inherit the orchestrator's model, so specify it explicitly 
    - if no reusable CIMs exist, do not ask anything and continue
 4. **Extract only pages that are not being reused.** For each classic page without a reusable/selected CIM:
    - invoke `extract-and-understand`
+   - `extract_classic_page` retries a failed extraction two times before returning an error (three total attempts); invoke it once and set the CIM status to `"error"` only after the tool exhausts its retries
    - extract and save the CIM only; do **not** auto-handoff to `transform-and-create`
 5. **Mark CIMs as planned.** After each successful extraction, and for each existing CIM selected for reuse, update the file with:
    - `"migrationStatus": "planned"`
@@ -63,20 +64,33 @@ Process all planned pages in parallel, up to **5 concurrent tasks**. Each task h
 #### Per-page task
 
 1. **Invoke `transform-and-create`.** Read the CIM and create or update the modern page. Do not ask the user about layout, web part choices, or page naming.
-2. **Update the CIM on create/update success** with:
+   - `create_modern_page` retries a failed `SavePage` operation two times before reporting failure; invoke it once and do not repeat the create request after an ambiguous response
+2. **Verify the newly created or updated modern page before recording success.**
+   - For a create, retain the page ID and URL returned by the operation. For an update, retain the page ID supplied to the operation and use the post-update lookup URL. Never invent them or derive them from the intended file name.
+   - Call `find_modern_page(destinationSiteUrl, targetPageName)`. It must return `found: true`, a nonempty URL, and a page ID equal to the create result or update input (compare IDs as strings).
+   - Call `extract_page_data` on the verified lookup URL after rendering. It must return a modern page without an extraction error.
+   - If any verification step fails, set `migrationStatus` to `"error"` with the exact failure and `lastAttemptAt`; do not invoke comparison and do not persist migration or score fields.
+3. **Update the CIM only after live-page verification** with:
    - `"migrationStatus": "migrated"`
    - `"migratedAt": "<ISO timestamp>"`
    - `"modernPageId": "<page ID from Graph API>"`
    - `"modernPageUrl": "<page web URL>"`
    - `"destinationSiteUrl": "<destination site URL>"`
-3. **Invoke `compare-and-refine` in compare-only mode.**
-   - build cleaned classic comparison data from the Phase 1 extraction bundle; do **not** structurally extract the live classic page
-   - extract the modern page, run `compare_migration_quality`, and apply the `compare-and-refine` score sanity gate
+4. **Invoke `compare-and-refine` in compare-only mode.**
+   - score the original classic page against the verified, newly created modern page--never one CIM against another CIM and never a CIM against a guessed destination URL
+   - build cleaned classic comparison data from the original Phase 1 extraction bundle; do **not** structurally extract the live classic page
+   - use the fresh verified modern-page extraction, capture screenshots of the live classic and verified modern pages, run `compare_migration_quality` with its screenshot-based visual assessment, and apply the `compare-and-refine` score sanity gate
+   - if comparison/scoring returns an error, an unparseable report, or no finite score after its internal retries, rebuild normalized classic data, refresh the verified modern extraction and both screenshots, then retry the complete comparison once
    - if a score below 50 conflicts with strong text or heading coverage, re-extract once before deciding
-   - do **not** iterate or fix issues in this phase
-   - if the comparison remains contradictory, record `comparisonScore: null` and `comparisonConfidence: "low"` with an inconclusive summary instead of a misleading zero
-   - update the CIM with `comparisonScore`, `comparisonConfidence`, `comparisonSummary`, and `comparedAt`
-4. **On failure,** set `"migrationStatus": "error"`, `"error": "<error message>"`, and `"lastAttemptAt": "<ISO timestamp>"`. The failed page stops; other pages continue.
+   - if the comparison retry fails or the comparison remains contradictory, record `comparisonScore: null` and `comparisonConfidence: "low"` with an inconclusive summary instead of a misleading zero; retain `migrationStatus: "migrated"` when live-page verification succeeded
+   - persist the initial result to the CIM with `comparisonScore`, `comparisonConfidence`, `comparisonSummary`, and `comparedAt`
+   - **Automatic refinement gate:** when the persisted initial `comparisonScore` is finite and below `80`, immediately invoke `compare-and-refine` in refinement mode inside the same per-page task. Do not ask the user to approve this follow-up.
+     - Refine the existing verified page only. Use its authoritative page ID with `update_modern_page`; never create a duplicate page.
+     - Preserve all source content. Unsupported or script-dependent behavior must remain a yellow-highlighted explanatory fallback with a supported modern alternative.
+     - After every update, repeat live lookup, modern extraction, screenshots, and comparison before persisting the new result.
+     - Continue while the score remains below `80` and the report identifies a concrete, supported remediation. Stop when the score reaches `80` or above, or when no further supported remediation can improve the result. Persist the final verified comparison fields to the CIM.
+   - Do not automatically refine a score of `80` or higher. A null or low-confidence score remains inconclusive and must not trigger automatic refinement.
+5. **On failure,** set `"migrationStatus": "error"`, `"error": "<error message>"`, and `"lastAttemptAt": "<ISO timestamp>"`. The failed page stops; other pages continue.
 
 #### Parallelism
 
@@ -150,4 +164,4 @@ Each subagent should load **only its own skill**.
 |-------|-------|---------------|-------|
 | `extract-and-understand` | Phase 1 | Inside a per-page subagent | Extract + CIM only, no handoff to transform |
 | `transform-and-create` | Phase 2 | Inside a per-page subagent | Reads CIM, creates modern page |
-| `compare-and-refine` | Phase 2 | Inside the **same** per-page subagent after transform | Compare only, no refinement |
+| `compare-and-refine` | Phase 2 | Inside the **same** per-page subagent after transform | Compare first; automatically refine only when the initial verified score is below 80 |

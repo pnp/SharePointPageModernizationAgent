@@ -4,6 +4,7 @@ import { post as restPost } from '../sharepoint/rest-client.js';
 import { canvasLayoutToCanvasContent1 } from '../sharepoint/canvas-converter.js';
 import type { CanvasLayout } from '../sharepoint/canvas-converter.js';
 import { logger } from '../utils/logger.js';
+import { retryOperation } from '../utils/retry.js';
 
 const EXPECTED_COLUMN_COUNTS: Record<string, number> = {
   oneColumn: 1,
@@ -121,10 +122,13 @@ export function registerCreatePageTool(server: McpServer): void {
         }
 
         logger.info('Saving page content via REST API', { pageId });
-        await restPost(
-          siteUrl,
-          `sitepages/pages(${pageId})/SavePage`,
-          saveBody,
+        await retryOperation(
+          'create_modern_page SavePage',
+          () => restPost(
+            siteUrl,
+            `sitepages/pages(${pageId})/SavePage`,
+            saveBody,
+          ),
         );
 
         return {

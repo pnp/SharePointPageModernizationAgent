@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { logger } from '../utils/logger.js';
 import { getSharePointCookies, createBrowserPage, waitForSharePointAuth } from '../sharepoint/auth.js';
+import { retryOperation } from '../utils/retry.js';
 
 /**
  * JavaScript extraction script to run inside a SharePoint page via Chrome DevTools MCP.
@@ -130,7 +131,7 @@ const EXTRACTION_SCRIPT = `async () => {
   // === Extract full text ===
   const fullText = contentEl.innerText;
 
-  // === Detect web parts (modern) ===
+  // === Detect web parts ===
   const webParts = [];
   if (!isClassic) {
     const wpContainers = document.querySelectorAll('[data-sp-web-part]');
@@ -143,9 +144,30 @@ const EXTRACTION_SCRIPT = `async () => {
           instanceId: data.instanceId || '',
           title: data.title || wp.querySelector('[data-automation-id="titleRegion"]')?.textContent?.trim() || '',
           alias: data.alias || '',
+          typeName: data.id || '',
+          kind: 'standard',
           innerText: wp.innerText.substring(0, 500)
         });
       } catch { /* ignore parse errors */ }
+    });
+
+    // Rich text editors do not expose data-sp-web-part, so collect them separately.
+    // The closest control is used to avoid counting nested editor elements twice.
+    const rteControls = new Set();
+    document.querySelectorAll('[data-automation-id="textEditor"], .textEditor, .textwebpart').forEach(editor => {
+      const control = editor.closest('[data-automation-id*="CanvasControl"]') || editor;
+      if (!control.querySelector('[data-sp-web-part]')) rteControls.add(control);
+    });
+    rteControls.forEach(rte => {
+      webParts.push({
+        id: rte.id || '',
+        instanceId: '',
+        title: '',
+        alias: '',
+        typeName: 'RTE',
+        kind: 'rte',
+        innerText: rte.innerText.substring(0, 500)
+      });
     });
   }
   // Classic web parts
@@ -155,10 +177,31 @@ const EXTRACTION_SCRIPT = `async () => {
       webParts.push({
         id: box.id || '',
         title: box.querySelector('.ms-webpart-titleText')?.textContent?.trim() || '',
+        typeName: '',
+        kind: 'unknown',
         innerText: box.innerText.substring(0, 500)
       });
     });
   }
+
+  // === Derive layout from rendered DOM ===
+  const layout = { sections: [] };
+  const sectionSelector = isClassic
+    ? '.ms-rte-layoutszone, .ms-webpartzone, [id*="WebPartZone"]'
+    : '[data-automation-id="CanvasZone-SectionContainer"], .CanvasSection';
+  const sectionElements = Array.from(contentEl.querySelectorAll(sectionSelector))
+    .filter(section => !Array.from(section.children).some(child => child.matches(sectionSelector)));
+
+  sectionElements.forEach(section => {
+    const columnSelector = isClassic
+      ? '.ms-rte-layoutszone-inner, .ms-webpartzone-cell'
+      : '.CanvasZone, [data-automation-id*="CanvasZone"]';
+    const columns = Array.from(section.querySelectorAll(columnSelector))
+      .filter(column => column.parentElement === section || column.parentElement?.parentElement === section)
+      .map(column => Math.round(column.getBoundingClientRect().width))
+      .filter(width => width > 0);
+    if (columns.length > 0) layout.sections.push({ columns });
+  });
 
   // === Structural counts ===
   return {
@@ -178,6 +221,7 @@ const EXTRACTION_SCRIPT = `async () => {
     tableCount: contentEl.querySelectorAll('table').length,
     codeBlockCount: contentEl.querySelectorAll('pre, code').length,
     iframeCount: contentEl.querySelectorAll('iframe').length,
+    layout,
     scrollHeight: container.scrollHeight,
     clientHeight: container.clientHeight
   };
@@ -194,13 +238,47 @@ interface PageData {
   linkCount: number;
   images: Array<{ src: string; alt: string; width: number; height: number }>;
   imageCount: number;
-  webParts: Array<{ id: string; title: string; innerText: string; alias?: string }>;
+  webParts: Array<{
+    id: string;
+    title: string;
+    innerText: string;
+    alias?: string;
+    typeName?: string;
+    kind?: 'rte' | 'standard' | 'unknown';
+    sourceId?: string;
+  }>;
   webPartCount: number;
   textLength: number;
   textPreview: string;
   tableCount: number;
   codeBlockCount: number;
   iframeCount: number;
+  layout?: {
+    sections: Array<{
+      columns: number[];
+    }>;
+  };
+}
+
+interface VisualAssessment {
+  status: 'MATCH' | 'MISMATCH' | 'INCONCLUSIVE';
+  layoutMatches?: boolean;
+  confirmedWebParts?: string[];
+  confirmedImages?: string[];
+  notes?: string[];
+}
+
+function isVisualAssessment(value: unknown): value is VisualAssessment {
+  if (!value || typeof value !== 'object') return false;
+  const assessment = value as Record<string, unknown>;
+  return (assessment.status === 'MATCH' || assessment.status === 'MISMATCH' || assessment.status === 'INCONCLUSIVE') &&
+    (assessment.layoutMatches === undefined || typeof assessment.layoutMatches === 'boolean') &&
+    (assessment.confirmedWebParts === undefined ||
+      (Array.isArray(assessment.confirmedWebParts) && assessment.confirmedWebParts.every(webPart => typeof webPart === 'string'))) &&
+    (assessment.confirmedImages === undefined ||
+      (Array.isArray(assessment.confirmedImages) && assessment.confirmedImages.every(image => typeof image === 'string'))) &&
+    (assessment.notes === undefined ||
+      (Array.isArray(assessment.notes) && assessment.notes.every(note => typeof note === 'string')));
 }
 
 interface ComparisonResult {
@@ -231,38 +309,163 @@ interface ComparisonResult {
     classicCount: number;
     modernCount: number;
     missing: number;
-    tileIcons: number;
-    contentImages: number;
+    invalidDimensions: number;
+    missingOrInvalid: number;
   };
   webPartComparison: {
     classicCount: number;
     modernCount: number;
+    missing: Array<{ id: string; title: string; typeName: string }>;
+    visuallyConfirmed: Array<{ id: string; title: string; typeName: string }>;
+    rteSubstitutions: Array<{ id: string; title: string; typeName: string }>;
+  };
+  layoutComparison: {
+    domStrictlyMapped: boolean | null;
+    visuallyConfirmed: boolean | null;
+    strictlyMapped: boolean | null;
+  };
+  visualComparison: {
+    status: VisualAssessment['status'] | 'NOT_PROVIDED';
+    notes: string[];
   };
   issues: string[];
   suggestions: string[];
 }
 
+type PageWebPart = PageData['webParts'][number];
+
+function textOrEmpty(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function normalizeText(value: unknown): string {
+  return textOrEmpty(value).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function isRteWebPart(webPart: PageWebPart): boolean {
+  return webPart.kind === 'rte' ||
+    /\b(rte|rich\s*(text|html)|textwebpart)\b/i.test(webPart.typeName ?? '');
+}
+
+function webPartsMatch(classic: PageWebPart, modern: PageWebPart): boolean {
+  const classicSourceId = classic.sourceId || classic.id;
+  const modernSourceId = modern.sourceId || modern.id;
+  if (classicSourceId && modernSourceId && classicSourceId === modernSourceId) return true;
+
+  const classicTitle = normalizeText(classic.title);
+  const modernTitle = normalizeText(modern.title);
+  if (classicTitle && classicTitle === modernTitle) return true;
+
+  const classicText = normalizeText(classic.innerText);
+  const modernText = normalizeText(modern.innerText);
+  return classicText.length >= 20 && modernText.length >= 20 &&
+    (classicText === modernText || classicText.includes(modernText) || modernText.includes(classicText));
+}
+
+function layoutsStrictlyMatch(classic: PageData, modern: PageData): boolean | null {
+  if (!classic.layout || !modern.layout) return null;
+  if (classic.layout.sections.length !== modern.layout.sections.length) return false;
+
+  return classic.layout.sections.every((classicSection, sectionIndex) => {
+    const modernSection = modern.layout?.sections[sectionIndex];
+    if (!modernSection || classicSection.columns.length !== modernSection.columns.length) return false;
+
+    const classicTotal = classicSection.columns.reduce((sum, width) => sum + width, 0);
+    const modernTotal = modernSection.columns.reduce((sum, width) => sum + width, 0);
+    if (classicTotal <= 0 || modernTotal <= 0) return false;
+
+    return classicSection.columns.every((width, columnIndex) =>
+      Math.abs(width / classicTotal - modernSection.columns[columnIndex] / modernTotal) < 0.01,
+    );
+  });
+}
+
+function isVisuallyConfirmed(webPart: PageWebPart, confirmedWebParts: string[] | undefined): boolean {
+  if (!confirmedWebParts) return false;
+  const identifiers = [webPart.id, webPart.sourceId, webPart.title, webPart.typeName]
+    .filter((value): value is string => Boolean(value))
+    .map(normalizeText);
+  return confirmedWebParts.some(reference => identifiers.includes(normalizeText(reference)));
+}
+
+function isImageVisuallyConfirmed(
+  image: PageData['images'][number],
+  confirmedImages: string[] | undefined,
+): boolean {
+  if (!confirmedImages) return false;
+  const identifiers = [image.src, image.alt]
+    .filter(Boolean)
+    .map(normalizeText);
+  return confirmedImages.some(reference => identifiers.includes(normalizeText(reference)));
+}
+
+function compareWebParts(
+  classic: PageData,
+  modern: PageData,
+  visualAssessment: VisualAssessment | undefined,
+): {
+  missing: PageWebPart[];
+  rteSubstitutions: PageWebPart[];
+  visuallyConfirmed: PageWebPart[];
+} {
+  const unmatchedModern = new Set(modern.webParts.map((_, index) => index));
+  const missing: PageWebPart[] = [];
+  const rteSubstitutions: PageWebPart[] = [];
+  const visuallyConfirmed: PageWebPart[] = [];
+
+  for (const classicWebPart of classic.webParts) {
+    const matchingStandard = [...unmatchedModern].find(index =>
+      !isRteWebPart(modern.webParts[index]) && webPartsMatch(classicWebPart, modern.webParts[index]),
+    );
+    if (matchingStandard !== undefined) {
+      unmatchedModern.delete(matchingStandard);
+      continue;
+    }
+
+    const matchingRte = [...unmatchedModern].find(index =>
+      isRteWebPart(modern.webParts[index]) && webPartsMatch(classicWebPart, modern.webParts[index]),
+    );
+    if (matchingRte !== undefined) {
+      unmatchedModern.delete(matchingRte);
+      if (!isRteWebPart(classicWebPart)) rteSubstitutions.push(classicWebPart);
+      continue;
+    }
+
+    if (isVisuallyConfirmed(classicWebPart, visualAssessment?.confirmedWebParts)) {
+      visuallyConfirmed.push(classicWebPart);
+    } else {
+      missing.push(classicWebPart);
+    }
+  }
+
+  return { missing, rteSubstitutions, visuallyConfirmed };
+}
+
 /**
  * Compare structural data extracted from classic and modern pages.
  */
-function comparePages(classic: PageData, modern: PageData): ComparisonResult {
+export function comparePages(
+  classic: PageData,
+  modern: PageData,
+  visualAssessment?: VisualAssessment,
+): ComparisonResult {
   const issues: string[] = [];
   const suggestions: string[] = [];
 
   // --- Heading comparison ---
-  const classicHeadings = classic.headings.map(h => h.text.toLowerCase().trim());
-  const modernHeadings = modern.headings.map(h => h.text.toLowerCase().trim());
+  const classicHeadings = classic.headings.map(h => normalizeText(h.text));
+  const modernHeadings = modern.headings.map(h => normalizeText(h.text));
 
   const matched: string[] = [];
   const missingInModern: string[] = [];
   const usedModern = new Set<number>();
 
   // Build a set of modern link texts for Quick Links cross-check
-  const modernLinkTexts = new Set(modern.links.map(l => l.text.toLowerCase().trim()));
+  const modernLinkTexts = new Set(modern.links.map(link => normalizeText(link.text)));
   const matchedViaLinks: string[] = []; // headings that became Quick Links tiles
 
   for (const ch of classic.headings) {
-    const chLower = ch.text.toLowerCase().trim();
+    const chLower = normalizeText(ch.text);
     // Try exact heading match, then case-insensitive substring
     let foundIdx = modernHeadings.findIndex((mh, i) => !usedModern.has(i) && mh === chLower);
     if (foundIdx < 0) {
@@ -293,11 +496,12 @@ function comparePages(classic: PageData, modern: PageData): ComparisonResult {
 
   // --- Link comparison ---
   // Normalize URLs for comparison (strip protocol, trailing slash, query params)
-  function normalizeUrl(url: string): string {
+  function normalizeUrl(url: unknown): string {
+    const urlText = textOrEmpty(url);
     try {
-      const u = new URL(url);
+      const u = new URL(urlText);
       return (u.hostname + u.pathname).replace(/\/$/, '').toLowerCase();
-    } catch { return url.toLowerCase(); }
+    } catch { return normalizeText(urlText); }
   }
 
   const classicLinkMap = new Map<string, { text: string; href: string }>();
@@ -312,7 +516,9 @@ function comparePages(classic: PageData, modern: PageData): ComparisonResult {
   for (const [normalizedUrl, link] of classicLinkMap) {
     if (!modernLinkUrls.has(normalizedUrl)) {
       // Also try matching by link text
-      const textMatch = modern.links.some(ml => ml.text.toLowerCase() === link.text.toLowerCase());
+      const textMatch = modern.links.some(modernLink =>
+        normalizeText(modernLink.text) === normalizeText(link.text),
+      );
       if (!textMatch) {
         missingLinks.push(link);
       }
@@ -326,8 +532,8 @@ function comparePages(classic: PageData, modern: PageData): ComparisonResult {
 
   // --- Text comparison ---
   // Extract significant phrases (sentences/paragraphs >20 chars) from classic, check if they appear in modern
-  const classicText = classic.textPreview.toLowerCase();
-  const modernText = modern.textPreview.toLowerCase();
+  const classicText = normalizeText(classic.textPreview);
+  const modernText = normalizeText(modern.textPreview);
 
   // Split into significant phrases (sentences)
   const classicPhrases = classicText.split(/[.\n\r]+/)
@@ -354,60 +560,87 @@ function comparePages(classic: PageData, modern: PageData): ComparisonResult {
   }
 
   // --- Image comparison ---
-  // Distinguish between standalone content images and tile/nav icons.
-  // Tile icons are small images whose alt text or filename matches a link label — they
-  // accompany navigation tiles and are decorative. Quick Links handles these as built-in
-  // icons, so missing tile icons are a minor issue, not a content gap.
-  const classicLinkTextsLower = new Set(classic.links.map(l => l.text.toLowerCase().trim()));
-  let tileIconCount = 0;
-  let contentImageMissing = 0;
+  const usedModernImages = new Set<number>();
+  let missingImages = 0;
+  let invalidImageDimensions = 0;
 
-  if (classic.imageCount > modern.imageCount) {
-    for (const img of classic.images) {
-      // Check if this image is already present in modern
-      const inModern = modern.images.some(mi => mi.src === img.src || mi.alt === img.alt);
-      if (inModern) continue;
-
-      // Heuristic: tile icon if (a) small size, or (b) filename/alt matches a link label
-      const isTileIcon =
-        (img.width > 0 && img.width <= 200 && img.height > 0 && img.height <= 200) ||
-        classicLinkTextsLower.has(img.alt.toLowerCase().trim()) ||
-        classic.links.some(l => img.src.toLowerCase().includes(l.text.toLowerCase().replace(/\s+/g, '')));
-
-      if (isTileIcon) {
-        tileIconCount++;
-      } else {
-        contentImageMissing++;
+  for (const classicImage of classic.images) {
+    const classicImageSrc = textOrEmpty(classicImage.src);
+    const classicImageAlt = textOrEmpty(classicImage.alt);
+    const modernImageIndex = modern.images.findIndex((modernImage, index) =>
+      !usedModernImages.has(index) &&
+      (textOrEmpty(modernImage.src) === classicImageSrc ||
+        (classicImageAlt.length > 0 && textOrEmpty(modernImage.alt) === classicImageAlt)),
+    );
+    if (modernImageIndex < 0) {
+      if (!isImageVisuallyConfirmed(classicImage, visualAssessment?.confirmedImages)) {
+        missingImages++;
       }
+      continue;
     }
+
+    usedModernImages.add(modernImageIndex);
+    const modernImage = modern.images[modernImageIndex];
+    if (modernImage.width <= 0 || modernImage.height <= 0) invalidImageDimensions++;
   }
 
-  const totalImagesMissing = Math.max(0, classic.imageCount - modern.imageCount);
-  if (contentImageMissing > 0) {
-    issues.push(`Missing content images: ${contentImageMissing} image(s) from classic not in modern`);
-    suggestions.push('Use Image web part for each classic image. Check if image URLs need to be re-uploaded.');
+  const missingOrInvalidImages = missingImages + invalidImageDimensions;
+  if (missingImages > 0) {
+    issues.push(`Missing images in modern: ${missingImages}`);
+    suggestions.push('Use Image web parts and confirm all image URLs were migrated successfully.');
   }
-  if (tileIconCount > 0) {
-    // Informational — tile icons converted to Quick Links are expected to be missing as standalone images
-    suggestions.push(`${tileIconCount} tile icon(s) not carried over — these accompanied navigation links now handled by Quick Links`);
+  if (invalidImageDimensions > 0) {
+    issues.push(`Modern images with zero width or height: ${invalidImageDimensions}`);
+    suggestions.push('Confirm the affected images render successfully and expose non-zero dimensions.');
   }
 
   // --- Web part comparison ---
-  if (classic.webPartCount > 0 && modern.webPartCount === 0) {
-    issues.push(`No web parts in modern page — classic had ${classic.webPartCount} web part(s)`);
-    suggestions.push('Classic web parts should be converted to modern equivalents (Quick Links, Button, List, etc.)');
+  const {
+    missing: missingWebParts,
+    rteSubstitutions,
+    visuallyConfirmed: visuallyConfirmedWebParts,
+  } = compareWebParts(classic, modern, visualAssessment);
+  if (missingWebParts.length > 0) {
+    issues.push(`Missing web parts in modern: ${missingWebParts.map(wp => wp.title || wp.typeName || wp.id).join(', ')}`);
+    suggestions.push('Replace each missing classic web part with its closest supported modern web part.');
+  }
+  if (rteSubstitutions.length > 0) {
+    issues.push(`Non-RTE web parts rendered as Rich Text: ${rteSubstitutions.map(wp => wp.title || wp.typeName || wp.id).join(', ')}`);
+    suggestions.push('Use a purpose-built modern web part instead of a Rich Text web part for these components.');
+  }
+  if (visuallyConfirmedWebParts.length > 0) {
+    suggestions.push(`${visuallyConfirmedWebParts.length} web part(s) confirmed visually despite missing DOM metadata.`);
+  }
+
+  // --- Layout and visual comparison ---
+  const domStrictlyMapped = layoutsStrictlyMatch(classic, modern);
+  const visuallyConfirmed = visualAssessment?.layoutMatches ?? null;
+  const strictlyMapped = domStrictlyMapped === false || visuallyConfirmed === false
+    ? false
+    : domStrictlyMapped === true && visuallyConfirmed === true
+    ? true
+    : null;
+  if (strictlyMapped === false) {
+    issues.push('Layout is not strictly mapped between the classic and modern pages');
+    suggestions.push('Rebuild the affected sections with the same column count and relative widths.');
+  } else if (strictlyMapped === null) {
+    suggestions.push('Layout could not be fully verified; provide a visual assessment with layoutMatches after comparing screenshots.');
+  }
+  if (visualAssessment?.status === 'MISMATCH') {
+    issues.push(`Visual comparison found differences: ${visualAssessment.notes?.join('; ') || 'no details provided'}`);
+  } else if (visualAssessment?.status === 'INCONCLUSIVE') {
+    issues.push(`Visual comparison was inconclusive: ${visualAssessment.notes?.join('; ') || 'no details provided'}`);
   }
 
   // --- Overall coverage score ---
+  // The score intentionally uses only the migration-fidelity deductions defined above.
+  // Link and text comparisons remain diagnostic details for human or AI review.
   let score = 100;
-  score -= missingInModern.length * 10;       // -10 per truly missing heading
-  // matchedViaLinks headings are NOT penalized — they're valid conversions
-  score -= missingLinks.length * 5;            // -5 per missing link
-  score -= missingPhrases.length * 3;          // -3 per missing phrase
-  score -= contentImageMissing * 10;           // -10 per missing content image
-  score -= tileIconCount * 2;                  // -2 per missing tile icon (minor, decorative)
-  if (textRatio < 0.6) score -= 20;
-  else if (textRatio < 0.8) score -= 10;
+  score -= missingWebParts.length * 20;
+  score -= rteSubstitutions.length * 5;
+  score -= missingOrInvalidImages * 10;
+  if (strictlyMapped === false) score -= 10;
+  score -= missingInModern.length * 5;
   score = Math.max(0, Math.min(100, score));
 
   // --- Status ---
@@ -448,13 +681,37 @@ function comparePages(classic: PageData, modern: PageData): ComparisonResult {
     imageComparison: {
       classicCount: classic.imageCount,
       modernCount: modern.imageCount,
-      missing: totalImagesMissing,
-      tileIcons: tileIconCount,
-      contentImages: contentImageMissing,
+      missing: missingImages,
+      invalidDimensions: invalidImageDimensions,
+      missingOrInvalid: missingOrInvalidImages,
     },
     webPartComparison: {
       classicCount: classic.webPartCount,
       modernCount: modern.webPartCount,
+      missing: missingWebParts.map(webPart => ({
+        id: webPart.id,
+        title: webPart.title,
+        typeName: webPart.typeName ?? '',
+      })),
+      visuallyConfirmed: visuallyConfirmedWebParts.map(webPart => ({
+        id: webPart.id,
+        title: webPart.title,
+        typeName: webPart.typeName ?? '',
+      })),
+      rteSubstitutions: rteSubstitutions.map(webPart => ({
+        id: webPart.id,
+        title: webPart.title,
+        typeName: webPart.typeName ?? '',
+      })),
+    },
+    layoutComparison: {
+      domStrictlyMapped,
+      visuallyConfirmed,
+      strictlyMapped,
+    },
+    visualComparison: {
+      status: visualAssessment?.status ?? 'NOT_PROVIDED',
+      notes: visualAssessment?.notes ?? [],
     },
     issues,
     suggestions,
@@ -492,16 +749,29 @@ export function registerCompareTool(server: McpServer): void {
   server.tool(
     'compare_migration_quality',
     'Compare structural data extracted from a classic page and its migrated modern version. ' +
-    'Input is the JSON output from running the extraction script on both pages. ' +
-    'Returns a detailed comparison report with content coverage score, missing items, and improvement suggestions.',
+    'Input is the JSON output from running the extraction script on both pages plus a screenshot-based visual assessment. ' +
+    'Returns a detailed DOM and visual comparison report with content coverage score, missing items, and improvement suggestions.',
     {
       classicPageData: z.string().describe('JSON string of extraction data from the classic source page'),
       modernPageData: z.string().describe('JSON string of extraction data from the modern migrated page'),
+      visualAssessment: z.string().optional().describe(
+        'Optional JSON screenshot assessment: {"status":"MATCH"|"MISMATCH"|"INCONCLUSIVE","layoutMatches":boolean,"confirmedWebParts":["classic title or ID"],"confirmedImages":["classic image URL or alt text"],"notes":["..."]}',
+      ),
     },
-    async ({ classicPageData, modernPageData }) => {
+    async ({ classicPageData, modernPageData, visualAssessment }) => {
       try {
         const classic: PageData = JSON.parse(classicPageData);
         const modern: PageData = JSON.parse(modernPageData);
+        let visual: VisualAssessment | undefined;
+        if (visualAssessment) {
+          const candidate: unknown = JSON.parse(visualAssessment);
+          if (!isVisualAssessment(candidate)) {
+            throw new Error(
+              'visualAssessment must contain status (MATCH, MISMATCH, or INCONCLUSIVE), optional layoutMatches, confirmedWebParts, confirmedImages, and string notes',
+            );
+          }
+          visual = candidate;
+        }
 
         if (classic.error) {
           return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Classic page extraction failed: ${classic.error}` }) }] };
@@ -510,7 +780,10 @@ export function registerCompareTool(server: McpServer): void {
           return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Modern page extraction failed: ${modern.error}` }) }] };
         }
 
-        const result = comparePages(classic, modern);
+        const result = await retryOperation(
+          'compare_migration_quality scoring',
+          async () => comparePages(classic, modern, visual),
+        );
 
         // Also include raw data summary for the AI to use
         const report = {
