@@ -37,6 +37,30 @@ Sign-in uses a real browser via Playwright. You authenticate once per tenant; th
 
 ---
 
+## Model recommendation
+
+For page transformations, fast, lower-cost models also works well.
+
+The table below shows the final scores of transforming 5 benchmark pages with different models.
+
+| Page | GPT-5.6-Luna-Medium | GPT-5.4-mini-Medium | GPT-5.6-Sol-Medium |
+|---|---:|---:|---:|
+| How To Use This Library | 90 -> 90 (high) | 85 -> 85 (high) | 90 -> 90 (high) |
+| PnP Page Modernization | 70 -> 90 (high) | 90 -> 90 (high) | 90 -> 90 (high) |
+| Copilot in SharePoint | 70 -> 90 (high) | 60 -> 80 (high) | 90 -> 90 (high) |
+| Baseline Security in SharePoint | 60 -> 70 (high) | 70 -> 90 (high) | 70 -> 70 (low) |
+| SharePoint Classic Content Deprecation | 90 -> 90 (high) | 100 -> 100 (high) | 90 -> 90 (high) |
+| **Final average** | **86** | **89** | **86** |
+
+This is a small, page-specific benchmark rather than a quality guarantee.
+
+When requesting a site migration, specify the page-subagent model:
+
+> Migrate the classic pages on `https://contoso.sharepoint.com/sites/Marketing`.
+> Use GPT-5.4-mini-Medium for page migration subagents.
+
+---
+
 ## Prerequisites
 
 - Node.js 20+
