@@ -1,4 +1,4 @@
-# SharePoint Page Migration Agent (Preview)
+# SharePoint Page Modernization Agent (Preview)
 
 AI-assisted migration of **classic SharePoint pages** (wiki, web part, publishing) to **modern SharePoint pages**. An AI agent (Claude Code, GitHub Copilot, or any MCP-capable host) drives a local **Model Context Protocol (MCP) server** to do the work.
 
