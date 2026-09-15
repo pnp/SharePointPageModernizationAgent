@@ -33,9 +33,10 @@ Subagents do **not** inherit the orchestrator's model, so specify it explicitly 
    - use `includeModernPages: false` to skip already-modern pages
    - present the page list as a summary table (name, type, library)
 2. **Determine the destination site.** Same-site migration is preferred when possible, including publishing sites whose source site already has the **Site Pages** feature activated.
-   - Detect this by checking whether the source site exposes a Site Pages library via `list_site_pages(..., library: "both")` or `resolve_list_info(siteUrl, "Site Pages")`
-   - If Site Pages resolves, use the **same site** as the destination
-   - Ask for a separate destination site URL only when the source is a publishing site **and** Site Pages is not activated
+   - Treat `list_site_pages(..., library: "both")` as page discovery only. A response with `SitePages.count: 0` means that no matching pages were returned; it does **not** mean that the Site Pages library is absent.
+   - For every publishing-site migration, call `resolve_list_info(sourceSiteUrl, "Site Pages")` before deciding that a separate destination is required. This is the authoritative Site Pages availability check.
+   - If `resolve_list_info` succeeds, use the **same site** as the destination, even when page discovery returned zero Site Pages.
+   - Ask for a separate destination site URL only when `resolve_list_info` confirms that Site Pages is unavailable, or cannot resolve it after its documented retries.
 3. **Check for existing page-understanding JSON before dispatching extraction tasks.** For each discovered page:
    - derive `pageunderstanding/<sitename>/<page-name-without-aspx>.json`
    - treat a file as reusable only if it is valid JSON with `schemaVersion`, `source`, and `content`, and `source.siteUrl` / `source.pageName` match the discovered page
