@@ -24,6 +24,7 @@ import { registerBuildImageTool } from './tools/builders/image.js';
 import { registerBuildEmbedTool } from './tools/builders/embed.js';
 import { registerBuildDividerTool } from './tools/builders/divider.js';
 import { registerBuildAnyWebPartTool } from './tools/builders/any.js';
+import { registerBuildListTool } from './tools/builders/list.js';
 import { registerBuildVideoTool } from './tools/builders/video.js';
 
 const server = new McpServer({
@@ -52,6 +53,7 @@ registerBuildImageTool(server);
 registerBuildEmbedTool(server);
 registerBuildDividerTool(server);
 registerBuildAnyWebPartTool(server);
+registerBuildListTool(server);
 registerBuildVideoTool(server);
 
 logger.info('Starting classic-to-modern MCP server');

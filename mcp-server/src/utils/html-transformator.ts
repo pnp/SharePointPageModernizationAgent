@@ -195,14 +195,14 @@ function shiftHeadings($: CheerioAPI): void {
   for (let level = 6; level >= 1; level--) {
     $(`h${level}`).each((_, el) => {
       const $el = $(el);
-      const textAlign = extractStyleValue($el.attr('style') ?? '', 'text-align');
       let newTag: string;
       if (level <= 3) {
         newTag = `h${level + 1}`;
       } else {
         newTag = 'div';
       }
-      const style = textAlign ? ` style="text-align:${textAlign}"` : '';
+      const existingStyle = $el.attr('style') ?? '';
+      const style = existingStyle ? ` style="${existingStyle}"` : '';
       const cls = $el.attr('class') ? ` class="${$el.attr('class')}"` : '';
       $el.replaceWith(`<${newTag}${cls}${style}>${$el.html()}</${newTag}>`);
     });
@@ -389,12 +389,12 @@ function handleTextDecoration($: CheerioAPI): void {
 
 // ── Style cleanup ─────────────────────────────────────────────────────
 
-const BLOCK_ELEMENTS = new Set(['p', 'div', 'h2', 'h3', 'h4', 'li', 'ul', 'ol', 'blockquote']);
-const INLINE_ELEMENTS = new Set(['span', 'a', 'em', 'strong']);
+const BLOCK_ELEMENTS = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'ul', 'ol', 'blockquote']);
+const INLINE_ELEMENTS = new Set(['span', 'a', 'em', 'strong', 'b', 'i', 'u', 's']);
 const TABLE_ELEMENTS = new Set(['table']);
 const CELL_ELEMENTS = new Set(['td', 'th']);
-const BLOCK_KEEP = new Set(['margin-left', 'text-align']);
-const INLINE_KEEP = new Set(['width', 'text-align']);
+const BLOCK_KEEP = new Set(['color', 'font-size', 'font-style', 'font-weight', 'margin-left', 'text-align']);
+const INLINE_KEEP = new Set(['color', 'font-size', 'font-style', 'font-weight', 'width', 'text-align']);
 const TABLE_KEEP = new Set(['width', 'border-collapse', 'border', 'margin-left', 'text-align']);
 const CELL_KEEP = new Set(['width', 'padding', 'border', 'background-color', 'color', 'text-align']);
 

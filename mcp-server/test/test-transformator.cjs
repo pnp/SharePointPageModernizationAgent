@@ -8,6 +8,7 @@ if (typeof globalThis.File === 'undefined') {
 
 // Test: PnP-style HTML transformation rules
 async function main() {
+  const { cleanWikiHtml } = await import('../dist/utils/html-sanitizer.js');
   const { transformHtml } = await import('../dist/utils/html-transformator.js');
 
   let failures = 0;
@@ -33,6 +34,14 @@ async function main() {
   {
     const out = transformHtml('<h1 style="text-align:center">Centered</h1>');
     pass('preserves text-align during heading shift', out.includes('text-align:center') && out.includes('<h2'));
+  }
+  {
+    const cleaned = cleanWikiHtml('<h2 style="font-family:Georgia;color:#005a9e;font-size:24px;font-style:italic">Styled heading</h2>').html;
+    const out = transformHtml(cleaned);
+    pass('preserves sanitized color during heading shift', out.includes('color:#005a9e'));
+    pass('preserves sanitized font size during heading shift', out.includes('font-size:24px'));
+    pass('preserves sanitized font style during heading shift', out.includes('font-style:italic'));
+    pass('removes unsupported font family', !out.includes('font-family'));
   }
 
   // ── Font size class mapping ────────────────────────────────────
@@ -182,6 +191,27 @@ async function main() {
   {
     const out = transformHtml('<span style="text-decoration:underline">Underlined</span>');
     pass('underline → <u>', out.includes('<u>Underlined</u>'));
+  }
+
+  // ── Canvas RTE-safe style preservation ─────────────────────────
+  console.log('\n--- Canvas RTE-safe styles ---');
+  {
+    const cleaned = cleanWikiHtml('<p style="color:#605e5c;font-size:19px;font-style:italic;position:fixed;background:url(javascript:alert(1))">Subtitle</p>').html;
+    const out = transformHtml(cleaned);
+    pass('preserves supported inline color', out.includes('color:#605e5c'));
+    pass('preserves supported inline font size', out.includes('font-size:19px'));
+    pass('preserves supported inline font style', out.includes('font-style:italic'));
+    pass('removes unsupported positioning', !out.includes('position:fixed'));
+    pass('removes unsafe background URL', !out.includes('javascript:'));
+  }
+  {
+    const cleaned = cleanWikiHtml('<div style="font-family:Consolas;background:#f3f2f1;border-left:5px solid #0078d4;padding:12px">Baseline rule</div>').html;
+    const out = transformHtml(cleaned);
+    pass('converts styled callout div to a Canvas-safe table', out.includes('<table'));
+    pass('preserves callout background', out.includes('background-color:#f3f2f1'));
+    pass('preserves callout padding', out.includes('padding:12px'));
+    pass('converts left border to safe full border', out.includes('border:1px solid #0078d4'));
+    pass('removes unsupported callout font family', !out.includes('font-family'));
   }
 
   // ── Zero-width space stripping ────────────────────────────────

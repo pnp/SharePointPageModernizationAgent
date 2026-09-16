@@ -83,6 +83,7 @@ export interface StandardWebPart {
   data: {
     dataVersion?: string;
     title?: string;
+    description?: string;
     properties: Record<string, unknown>;
     serverProcessedContent?: {
       htmlStrings?: MetaDataKeyStringPair[];
@@ -92,6 +93,9 @@ export interface StandardWebPart {
       componentDependencies?: MetaDataKeyStringPair[];
       customMetadata?: MetaDataKeyValuePair[];
     };
+    dynamicDataPaths?: Record<string, unknown>;
+    dynamicDataValues?: Record<string, unknown>;
+    containsDynamicDataSource?: boolean;
   };
 }
 

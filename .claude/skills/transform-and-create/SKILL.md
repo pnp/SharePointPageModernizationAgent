@@ -34,11 +34,19 @@ If the CIM has `transformationHints.sections`, follow it as your layout plan. Fo
 
 ### titleArea Handling
 
-Publishing fields are **body content**, not title area metadata. Use a plain title area for publishing pages:
+Every migrated Site Page must have a visible title region. The REST `Title` field alone does not create one. Publishing fields are **body content**, not title area metadata. Use the extracted page title for a plain title area:
 
 ```json
-{ "layout": "plain", "showAuthor": false, "showPublishedDate": false, "showTextBlockAboveTitle": false }
+{
+  "title": "<content.title>",
+  "layout": "plain",
+  "showAuthor": false,
+  "showPublishedDate": false,
+  "showTextBlockAboveTitle": false
+}
 ```
+
+Pass this `titleArea` when creating every page. When updating a page, pass both the page `title` and `titleArea` unless the existing title region was already live-verified. The title region is independent from the first body heading; do not treat a body `<h1>` as a replacement.
 
 ---
 
@@ -81,12 +89,32 @@ Publishing fields are **body content**, not title area metadata. Use a plain tit
 
 ### Step 2: Build Web Parts
 
-**IMPORTANT: Always use `build_text_webpart` for HTML content.** It applies critical transformations: heading shifts (h1→h2), `<img>` → RTE inline images, table class mapping, script removal, and the wiki-HTML cleanups below.
+**IMPORTANT: Always use `build_text_webpart` for HTML content.** It applies critical transformations: heading shifts (h1→h2), `<img>` → RTE inline images, table class mapping, script removal, Canvas RTE-safe presentation-style preservation, and the wiki-HTML cleanups below. This is part of every initial migration, regardless of the later comparison score.
 
 **Wiki HTML sanitization (applied automatically by `build_text_webpart`):**
 - Strip `<table id="layoutsTable">` (classic wiki layout wrapper — not real content)
 - Unwrap Microsoft SafeLinks redirects (`https://*.safelinks.protection.outlook.com/?url=...`) back to the original URL
 - Clean `data-auth` and related auth-tracking attributes that classic SharePoint injects into anchors
+
+#### Canvas RTE-Safe Presentation Styles
+
+Preserve high-value visual fidelity with the inline styles that Canvas RTE demonstrably retains: fixed hexadecimal `color`, `font-size`, `font-style`, `font-weight`, `text-align`, and `margin-left` on text; plus `width`, `border-collapse`, `border`, `padding`, `background-color`, and `color` on tables and table cells. `build_text_webpart` validates this subset and strips style blocks, custom classes, external URLs, positioning, layout CSS, and unsupported properties.
+
+- Preserve the modern page title area instead of duplicating the classic `<h1>` in the first Text web part.
+- Retain source heading/subtitle colors and simple typography as direct inline styles. Do not replace them with `fontColor*` or `highlightColor*` class names; those class names can persist without producing a visible effect in Canvas RTE.
+- Convert a classic `<div>` callout that has background, padding, and a border into a one-cell full-width table. Canvas RTE reliably retains the table cell's `background-color`, `padding`, and a visible `border`; use a full border rather than `border-left`. Tenant styling can override the requested border color, so do not treat an exact border color as a fidelity guarantee.
+- Keep styles semantic and local to the content. Do not reproduce font families, CSS variables, pseudo-elements, `display`, `position`, flex/grid, media queries, transforms, or arbitrary CSS classes.
+
+#### Explicit Text Web Part Restyling
+
+When a user explicitly requests a style refresh for an already migrated page, re-run this transformation in **update mode** rather than waiting for the comparison score gate:
+
+1. Use the existing CIM's `modernPageId`, `modernPageUrl`, and `destinationSiteUrl` only after confirming the target with `find_modern_page`.
+2. Rebuild every source-derived Text web part from the original CIM content through `build_text_webpart`, including HTML zones, publishing rich-HTML fields, resolved Content Editor HTML, and required yellow fallbacks. Do not copy the existing modern `innerHtml`, because it cannot gain newly supported styles.
+3. Rebuild the complete canvas from the CIM so that existing non-Text web parts retain their original mappings and positions. Call `update_modern_page` with the verified existing page ID, title, title area, and rebuilt canvas; never create a second page.
+4. Repeat live lookup, modern extraction, screenshot verification, and comparison. Persist `textWebpartStyleRefinedAt` and `textWebpartStyleRefinementReason: "explicit-user-request"` in the CIM after verification.
+
+This direct restyling mode is deliberately independent of automated comparison scoring. It is for existing pages after a supported Text web-part transformation improvement, not for unrelated content changes.
 
 #### Image Handling
 
@@ -109,9 +137,11 @@ When source and destination are on **different tenants** (different SharePoint d
 
 ##### Image Web Part vs Inline RTE
 
-- **Use `build_image_webpart`** only when images are local to the destination site AND you have the full site metadata (`siteId`, `webId`, `listId`, `uniqueId`). Without this metadata, `imageSourceType: 2` renders blank or shows a stock placeholder — even for same-tenant absolute URLs.
+- **Use `build_image_webpart`** only when images are local to the destination site AND you have the full site metadata (`siteId`, `webId`, `listId`, `uniqueId`). Pass those IDs, `imgWidth`, `imgHeight`, and the source `fileName` to the builder so it writes the required image `customMetadata`. Without this metadata, `imageSourceType: 2` renders blank or shows a stock placeholder — even for same-tenant absolute URLs.
+- **SVG files:** Preserve an SVG as sanitized linked `<img>` HTML in a Text web part instead of using `build_image_webpart`. The modern Image web part can persist a valid SVG configuration but render nothing; retain the source link, alt text, and dimensions in the Text control.
 - **After cross-tenant asset migration, always use `build_text_webpart`** with `<img>` tags using **server-relative destination paths** (e.g., `/sites/team/SiteAssets/photo.png`). This is the most reliable approach — images render correctly and support click-through links via wrapping `<a>` tags. Do NOT pass `sourceUrl` so the server-relative paths are preserved.
 - **Never use `build_image_webpart` for cross-tenant migrated assets** — even after uploading to the destination's SiteAssets, the Image web part lacks the site metadata needed to resolve the image. Use text web parts with inline images instead.
+- **Never duplicate an image:** Before assembling the canvas, inventory all source image URLs across `wikiZones`, content blocks, publishing fields, and standalone image web parts. Normalize URLs by removing rendition/query parameters for identity comparison. Each source image must produce exactly one target image: keep it in the transformed Text control when article HTML already contains it, or extract it into one dedicated Image/Text control and remove it from the article HTML. After save, inspect the canvas controls and rendered page to confirm the expected image count.
 
 ##### Quick Links Thumbnail Limitations
 
@@ -137,6 +167,7 @@ for each zone in wikiZones:
     → Find matching web part in content.webParts by position index
     → Tier 1: If web part has resolvedHtml → build_text_webpart with resolvedHtml
       (or classify content for richer web part: Quick Links, Image, etc.)
+      For `SummaryLinkWebPart`, call `build_quick_links_webpart` with `title: webPart.title` and the extracted links. Do not use a generic or omitted heading; the classic web part title must remain visible above its Quick Links.
     → Tier 2: If web part has modernMapping → validate properties against the catalog schema before building:
       1. Call `get_modern_webpart_catalog()` and look up the web part by its `webPartId`
       2. Use only properties that exist in the catalog schema — drop non-schema properties from the CIM hints
@@ -148,11 +179,14 @@ for each zone in wikiZones:
         - For same-site migration, preserve the exact source list when it still exists. Resolve using the underlying list URL/title and verify that the returned ID or server-relative URL matches the CIM.
         - For cross-site migration, resolve the DESTINATION site's intentional equivalent library (e.g. source "Pages" → dest "Site Pages"). If no unambiguous equivalent exists, preserve the source list content as links or a yellow-highlighted explanatory fallback rather than silently binding a different list.
         - Call `resolve_list_info(siteUrl, listTitle)` on the DESTINATION site using the underlying list's resolved title (derived from its ID/URL), not the web part display title, to get the list ID, default view ID, and server-relative URL
-        - Use build_any_webpart with:
-          - webPartType: f92bf067-bc19-489e-a556-7fe95f508720
-          - dataVersion: "1.0" (NOT "2.1" or other versions)
-          - properties: { selectedListId, selectedViewId, selectedListUrl, listTitle } — use the values returned by resolve_list_info
-          - Only include properties from the schema — do NOT add isDocumentLibrary, hideCommandBar, or other non-schema properties
+        - Use `build_list_webpart` with:
+          - `siteUrl`: destination site URL
+          - `listId`, `viewId`, `listUrl`, and `listTitle`: use the values returned by `resolve_list_info`
+          - `title`: `webPart.title`
+          - `isDocumentLibrary`: determine from the resolved destination list type
+          - `webpartHeightKey`: 4 unless the classic configuration supplies a supported size
+          - `hideCommandBar`: preserve a supported source preference; otherwise false
+        - `build_list_webpart` adds the required web-relative list URL, root-folder path, searchable list title, and dynamic-data configuration. Do not hand-roll or omit these fields.
         - When the exact/equivalent list resolves unambiguously, create a real List web part rather than falling back to text links or Quick Links. Use fallback content only when no valid destination list exists.
         - After building, confirm `selectedListId` and `selectedListUrl` identify the intended source/equivalent list. Reject mappings where only the display title matches.
     → Tier 3 (last resort): yellow-highlighted text fallback noting the classic type + modern alternatives
@@ -162,17 +196,23 @@ for each zone in wikiZones:
 
 Position-based matching: wpbox GUIDs in HTML don't match web part entry IDs — match by position index.
 
+Before saving, reconcile every `wikiZones[].webPartIds` entry against exactly one modern control or one yellow fallback. A `build_any_webpart` response may wrap its control in a `webpart` field; pass the inner control to the canvas or let `build_canvas_layout` unwrap it. Never pass an unrecognized wrapper directly to `create_modern_page` or `update_modern_page`, because it must fail rather than silently dropping the control.
+
 #### Modern Fallback Notice Format
 
-All explanatory fallbacks for unsupported, script-dependent, or unresolved classic web parts must be visually distinct from migrated page content. Build them as a Text web part with the complete notice inside SharePoint's yellow RTE highlight:
+All explanatory fallbacks for unsupported, script-dependent, or unresolved classic web parts must be visually distinct from migrated page content. Build them as a Text web part with the complete notice in a Canvas RTE-safe yellow table callout:
 
 ```html
-<p><span class="ms-rtebackcolor-3"><strong>Modern fallback — {classic web part title or type}</strong><br>
-This section previously provided {lost behavior}. It cannot run as-is on a modern SharePoint page.<br>
-<strong>Recommended modern alternative:</strong> {specific replacement or next step}.</span></p>
+<table style="width:100%;border-collapse:collapse"><tbody><tr>
+  <td style="background-color:#fff4ce;border:1px solid #ffb900;padding:12px">
+    <strong>Modern fallback — {classic web part title or type}</strong><br>
+    This section previously provided {lost behavior}. It cannot run as-is on a modern SharePoint page.<br>
+    <strong>Recommended modern alternative:</strong> {specific replacement or next step}.
+  </td>
+</tr></tbody></table>
 ```
 
-`build_text_webpart` converts `ms-rtebackcolor-3` to the modern `highlightColorYellow` class. Highlight the complete fallback notice, not only its heading. Do not use this treatment for ordinary migrated text.
+The complete notice must remain inside the yellow callout. The yellow background is the required visual distinction; tenant styling can override the border color. Do not use this treatment for ordinary migrated text.
 
 #### Standalone Web Parts (sourceWebPartId)
 
@@ -212,9 +252,9 @@ Example: MediaWebPart → `build_embed_webpart({ embedUrl: "...", embedType: "vi
 
 Before calling `create_modern_page`, check if a page with the target name already exists on the destination site. If it does, call `update_modern_page` with the existing page's ID. If the page exists but is currently checked out by another user, call `discardPage` to clear the checkout and retry the update. This ensures the migration process is resilient and can be re-run without manual cleanup.
 
-3. Call `create_modern_page` (or `update_modern_page` if updating) to write the draft page
+3. Call `create_modern_page` (or `update_modern_page` if updating) with the title and required `titleArea` to write the draft page
 
-4. For pages containing List/SPFx web parts, call `extract_page_data` on the created page after rendering and verify that expected list titles or representative item labels appear in `textPreview`. Because SPFx detection can report `webPartCount: 0`, validate rendered content rather than relying on that count. If the expected content is absent or a different library is rendered, correct the list mapping before reporting success.
+4. Capture a rendered screenshot after creation/update. Verify that the title region visibly displays `content.title`, and that every Quick Links and List/SPFx web part title appears with its rendered control. `extract_page_data` can report `webPartCount: 0` for SPFx controls, so also verify that expected list titles or representative item labels appear in `textPreview`. Do not count source evidence tables, fallback notices, or ordinary body links as proof that a List web part rendered. If a title or expected list content is absent, correct the mapping before reporting success.
 
 ---
 
@@ -288,12 +328,14 @@ Web part page with text, a jQuery dashboard, and an image.
 
 3. Zone 2 → has <script> tags, can't convert directly
    → build_text_webpart(
-       <p><span class="ms-rtebackcolor-3"><strong>Modern fallback — Interactive Dashboard</strong><br>
+       <table style="width:100%;border-collapse:collapse"><tbody><tr>
+       <td style="background-color:#fff4ce;border:1px solid #ffb900;padding:12px">
+       <strong>Modern fallback — Interactive Dashboard</strong><br>
        This section contained a jQuery KPI dashboard that displayed live metrics.
        JavaScript content cannot run in modern pages.<br>
        <strong>Recommended modern alternatives:</strong> Embed a Power BI dashboard for
        live KPI visualization, or build a custom SPFx web part to replicate the
-       functionality.</span></p>)
+       functionality.</td></tr></tbody></table>)
 
 4. Zone 3 → build_image_webpart("/sites/team/images/logo.png", altText: "Team logo")
 
@@ -324,7 +366,7 @@ Web part page with text, a jQuery dashboard, and an image.
 ### Content Edge Cases
 
 - **Relative URLs:** Classic pages often use relative URLs (`/sites/team/SitePages/...`). For general HTML content, pass `sourceUrl` to `build_text_webpart` to resolve them to absolute. For images in cross-site migration, keep server-relative URLs (do NOT pass `sourceUrl`) — see [Same-Tenant Cross-Site Images](#same-tenant-cross-site-images).
-- **Inline styles:** Modern text web parts accept a subset of HTML/CSS. Heavily styled content may lose some formatting.
+- **Inline styles:** Preserve only the documented Canvas RTE-safe subset above. Convert callouts to one-cell tables; do not retain style blocks, custom classes, layout CSS, or font families.
 - **Image sizing in text web parts:** HTML `width`/`height` attributes on `<img>` tags are preserved in the saved HTML but **ignored by SharePoint's modern RTE renderer** — images scale to fill their containing column regardless. To control image size, use multi-column section layouts (`threeColumns` = ~33% width each) to constrain the column width rather than relying on image dimensions.
 - **Nested tables:** Layout tables inside content tables may not render well. Flatten where possible.
 - **Cross-tenant images:** Image web parts with `imageSourceType: 2` (external URL) show stock placeholder images when the URL points to a different SharePoint tenant. The fix is to download the images from the source tenant and upload them to the destination site's SiteAssets library — see [Cross-Tenant Assets](#cross-tenant-assets).
@@ -337,6 +379,7 @@ Web part page with text, a jQuery dashboard, and an image.
 |------|---------|
 | `build_text_webpart(innerHtml, sourceUrl?)` | Rich text web part |
 | `build_quick_links_webpart(links[], layoutId)` | Quick Links |
+| `build_list_webpart(siteUrl, listId, viewId, listUrl, listTitle, ...)` | List / library |
 | `build_image_webpart(imageUrl, altText?, captionText?, linkUrl?)` | Image web part |
 | `build_embed_webpart(embedUrl, embedType?)` | Embed |
 | `build_divider_webpart()` | Divider |

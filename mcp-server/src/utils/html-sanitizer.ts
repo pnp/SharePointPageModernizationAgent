@@ -1,6 +1,125 @@
 import * as cheerio from 'cheerio';
 
 const EVENT_HANDLER_ATTRS = /^on[a-z]+$/i;
+const HEX_COLOR_PATTERN = '#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})';
+const HEX_COLOR = new RegExp(`^${HEX_COLOR_PATTERN}$`, 'i');
+const CSS_LENGTH = /^(?:0|(?:\d+(?:\.\d+)?)(?:px|pt|em|rem|%))$/i;
+const CSS_BOX_LENGTHS = /^(?:0|(?:\d+(?:\.\d+)?)(?:px|pt|em|rem|%))(?:\s+(?:0|(?:\d+(?:\.\d+)?)(?:px|pt|em|rem|%))){0,3}$/i;
+
+const BLOCK_STYLE_PROPERTIES = new Set([
+  'color',
+  'font-size',
+  'font-style',
+  'font-weight',
+  'margin-left',
+  'text-align',
+]);
+const INLINE_STYLE_PROPERTIES = new Set([
+  'color',
+  'font-size',
+  'font-style',
+  'font-weight',
+  'text-align',
+  'width',
+]);
+const TABLE_STYLE_PROPERTIES = new Set([
+  'border',
+  'border-collapse',
+  'margin-left',
+  'text-align',
+  'width',
+]);
+const CELL_STYLE_PROPERTIES = new Set([
+  'background-color',
+  'border',
+  'color',
+  'padding',
+  'text-align',
+  'width',
+]);
+
+function getStyleValue(style: string, property: string): string | undefined {
+  const match = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, 'i').exec(style);
+  return match?.[1]?.trim();
+}
+
+function isSafeStyleValue(property: string, value: string): boolean {
+  switch (property) {
+    case 'background-color':
+    case 'color':
+      return HEX_COLOR.test(value);
+    case 'border':
+      return value === 'none'
+        || value === '0'
+        || /^0px$/i.test(value)
+        || new RegExp(`^(?:\\d+(?:\\.\\d+)?px)\\s+(?:solid|dashed|dotted)\\s+${HEX_COLOR_PATTERN}$`, 'i').test(value);
+    case 'border-collapse':
+      return value === 'collapse' || value === 'separate';
+    case 'font-size':
+    case 'margin-left':
+    case 'width':
+      return CSS_LENGTH.test(value);
+    case 'padding':
+      return CSS_BOX_LENGTHS.test(value);
+    case 'font-style':
+      return value === 'normal' || value === 'italic' || value === 'oblique';
+    case 'font-weight':
+      return value === 'normal' || value === 'bold' || /^[1-9]00$/.test(value);
+    case 'text-align':
+      return ['left', 'right', 'center', 'justify', 'start', 'end'].includes(value);
+    default:
+      return false;
+  }
+}
+
+function keepAllowedStyles(style: string, allowedProperties: Set<string>): string {
+  const styles: string[] = [];
+  for (const declaration of style.split(';')) {
+    const colonIndex = declaration.indexOf(':');
+    if (colonIndex === -1) continue;
+
+    const property = declaration.slice(0, colonIndex).trim().toLowerCase();
+    const value = declaration.slice(colonIndex + 1).trim();
+    if (allowedProperties.has(property) && isSafeStyleValue(property, value)) {
+      styles.push(`${property}:${value}`);
+    }
+  }
+  return styles.join(';');
+}
+
+function convertStyledCallouts($: cheerio.CheerioAPI): void {
+  $('div[style]').each((_, element) => {
+    const $element = $(element);
+    const style = $element.attr('style') ?? '';
+    const background = getStyleValue(style, 'background-color') ?? getStyleValue(style, 'background');
+    const padding = getStyleValue(style, 'padding');
+    const border = getStyleValue(style, 'border');
+    const borderLeft = getStyleValue(style, 'border-left');
+    const borderColor = borderLeft?.match(new RegExp(`${HEX_COLOR_PATTERN}(?![0-9a-f])`, 'i'))?.[0];
+
+    if (!background || !padding || (!border && !borderColor)) return;
+    if (!HEX_COLOR.test(background) || !CSS_BOX_LENGTHS.test(padding)) return;
+
+    const cellStyles = [
+      `background-color:${background}`,
+      `padding:${padding}`,
+    ];
+    if (border && isSafeStyleValue('border', border)) {
+      cellStyles.push(`border:${border}`);
+    } else if (borderColor) {
+      cellStyles.push(`border:1px solid ${borderColor}`);
+    }
+
+    const color = getStyleValue(style, 'color');
+    if (color && HEX_COLOR.test(color)) {
+      cellStyles.push(`color:${color}`);
+    }
+
+    $element.replaceWith(
+      `<table style="width:100%;border-collapse:collapse"><tbody><tr><td style="${cellStyles.join(';')}">${$element.html() ?? ''}</td></tr></tbody></table>`,
+    );
+  });
+}
 
 /**
  * Unwrap a SafeLinks URL to its original destination.
@@ -136,56 +255,49 @@ export function cleanWikiHtml(html: string): { html: string; hadScripts: boolean
     $(el).replaceWith($(el).html() ?? '');
   });
 
-  // Remove inline styles (modern page will re-style), but preserve on ms-rte elements.
+  // Preserve Canvas RTE-safe presentation values and remove unsupported CSS.
+  convertStyledCallouts($);
+
   // For <img> tags, promote width/height CSS values to HTML attributes before stripping,
   // so the downstream image transformer (getDimension) can still read them.
   $('*').each((_, el) => {
     const $el = $(el);
-    const cls = $el.attr('class') ?? '';
-    if (!cls.includes('ms-rte')) {
-      const tagName = (el as unknown as { tagName: string }).tagName?.toLowerCase();
-      if (tagName === 'img') {
-        const style = $el.attr('style') ?? '';
-        if (style) {
-          for (const prop of ['width', 'height'] as const) {
-            if (!$el.attr(prop)) {
-              const match = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i').exec(style);
-              if (match) {
-                const pxMatch = /^(\d+(?:\.\d+)?)\s*(?:px)?$/i.exec(match[1].trim());
-                if (pxMatch) {
-                  $el.attr(prop, pxMatch[1]);
-                }
+    const tagName = (el as unknown as { tagName: string }).tagName?.toLowerCase();
+    const style = $el.attr('style') ?? '';
+
+    if (tagName === 'img') {
+      if (style) {
+        for (const prop of ['width', 'height'] as const) {
+          if (!$el.attr(prop)) {
+            const match = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i').exec(style);
+            if (match) {
+              const pxMatch = /^(\d+(?:\.\d+)?)\s*(?:px)?$/i.exec(match[1].trim());
+              if (pxMatch) {
+                $el.attr(prop, pxMatch[1]);
               }
             }
           }
         }
       }
-      // For <table>, preserve layout properties (width, border-collapse, border)
-      // so that tile tables fill the text web part content area.
-      if (tagName === 'table') {
-        const style = $el.attr('style') ?? '';
-        const preserved: string[] = [];
-        for (const prop of ['width', 'border-collapse', 'border']) {
-          const match = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i').exec(style);
-          if (match) preserved.push(`${prop}:${match[1].trim()}`);
-        }
-        $el.removeAttr('style');
-        if (preserved.length) $el.attr('style', preserved.join(';'));
-      }
-      // For <td>/<th>, preserve visual + layout properties
-      // so that styled table tiles (e.g., blue backgrounds, cell widths) survive.
-      else if (tagName === 'td' || tagName === 'th') {
-        const style = $el.attr('style') ?? '';
-        const preserved: string[] = [];
-        for (const prop of ['background-color', 'color', 'text-align', 'width', 'padding', 'border']) {
-          const match = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i').exec(style);
-          if (match) preserved.push(`${prop}:${match[1].trim()}`);
-        }
-        $el.removeAttr('style');
-        if (preserved.length) $el.attr('style', preserved.join(';'));
-      } else {
-        $el.removeAttr('style');
-      }
+      $el.removeAttr('style');
+    } else if (tagName === 'table') {
+      const preserved = keepAllowedStyles(style, TABLE_STYLE_PROPERTIES);
+      if (preserved) $el.attr('style', preserved);
+      else $el.removeAttr('style');
+    } else if (tagName === 'td' || tagName === 'th') {
+      const preserved = keepAllowedStyles(style, CELL_STYLE_PROPERTIES);
+      if (preserved) $el.attr('style', preserved);
+      else $el.removeAttr('style');
+    } else if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'ul', 'ol', 'blockquote'].includes(tagName)) {
+      const preserved = keepAllowedStyles(style, BLOCK_STYLE_PROPERTIES);
+      if (preserved) $el.attr('style', preserved);
+      else $el.removeAttr('style');
+    } else if (['span', 'a', 'em', 'strong', 'b', 'i', 'u', 's'].includes(tagName)) {
+      const preserved = keepAllowedStyles(style, INLINE_STYLE_PROPERTIES);
+      if (preserved) $el.attr('style', preserved);
+      else $el.removeAttr('style');
+    } else {
+      $el.removeAttr('style');
     }
   });
 

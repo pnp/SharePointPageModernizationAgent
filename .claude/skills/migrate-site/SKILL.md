@@ -19,8 +19,8 @@ Every `extract-and-understand` and `transform-and-create` invocation must run in
 ### Model selection when dispatching subagents
 
 Subagents do **not** inherit the orchestrator's model, so specify it explicitly for every per-page task:
-- **Claude Code:** already specified in `SKILL.md`
-- **GitHub Copilot CLI:** use the **fast model** with `reasoning_effort: "medium"` when calling the Task tool (for example, an economic/fast model such as gpt-luna or mini)
+- Prefer an available Claude Haiku or `gpt-5.6-luna` task model with `reasoning_effort: "high"`.
+- If neither is available, use an available fast/economic model with `reasoning_effort: "high"` (for example, `gpt-5-mini`).
 
 ---
 
@@ -66,10 +66,12 @@ Process all planned pages in parallel, up to **5 concurrent tasks**. Each task h
 
 1. **Invoke `transform-and-create`.** Read the CIM and create or update the modern page. Do not ask the user about layout, web part choices, or page naming.
    - `create_modern_page` retries a failed `SavePage` operation two times before reporting failure; invoke it once and do not repeat the create request after an ambiguous response
+   - Every source-derived HTML block must be rebuilt through `build_text_webpart` during this initial transform so that the current Canvas RTE-safe style transformation is applied before the first save. This is migration behavior, not score-gated refinement behavior.
 2. **Verify the newly created or updated modern page before recording success.**
    - For a create, retain the page ID and URL returned by the operation. For an update, retain the page ID supplied to the operation and use the post-update lookup URL. Never invent them or derive them from the intended file name.
    - Call `find_modern_page(destinationSiteUrl, targetPageName)`. It must return `found: true`, a nonempty URL, and a page ID equal to the create result or update input (compare IDs as strings).
    - Call `extract_page_data` on the verified lookup URL after rendering. It must return a modern page without an extraction error.
+   - Capture a screenshot and verify that the page title is visibly rendered in its title region. A matching document title or a body heading alone is insufficient.
    - If any verification step fails, set `migrationStatus` to `"error"` with the exact failure and `lastAttemptAt`; do not invoke comparison and do not persist migration or score fields.
 3. **Update the CIM only after live-page verification** with:
    - `"migrationStatus": "migrated"`
@@ -91,6 +93,7 @@ Process all planned pages in parallel, up to **5 concurrent tasks**. Each task h
      - After every update, repeat live lookup, modern extraction, screenshots, and comparison before persisting the new result.
      - Continue while the score remains below `80` and the report identifies a concrete, supported remediation. Stop when the score reaches `80` or above, or when no further supported remediation can improve the result. Persist the final verified comparison fields to the CIM.
    - Do not automatically refine a score of `80` or higher. A null or low-confidence score remains inconclusive and must not trigger automatic refinement.
+   - Do not trigger automatic refinement solely to apply Text web-part styles: visual styles are not a comparison-scored dimension. When a user explicitly requests a style refresh for existing migrated pages, route the request to `transform-and-create` in update mode. It rebuilds all source-derived Text web parts from the CIM with the current `build_text_webpart` transformation, retains non-Text mappings, updates the verified existing page ID, and persists the explicit-restyle fields documented in `compare-and-refine`.
 5. **On failure,** set `"migrationStatus": "error"`, `"error": "<error message>"`, and `"lastAttemptAt": "<ISO timestamp>"`. The failed page stops; other pages continue.
 
 #### Parallelism
@@ -126,6 +129,8 @@ Add or maintain these top-level fields in each CIM JSON file:
 | `comparisonConfidence` | `"high" \| "low"` | Confidence in the comparison result |
 | `comparisonSummary` | string | Brief summary of comparison findings |
 | `comparedAt` | ISO 8601 string | When comparison ran |
+| `textWebpartStyleRefinedAt` | ISO 8601 string | When an explicit Text web-part style refresh was verified |
+| `textWebpartStyleRefinementReason` | `"explicit-user-request"` | Why the style refresh bypassed score-gated automatic refinement |
 | `error` | string | Error from the last failed attempt |
 | `lastAttemptAt` | ISO 8601 string | When the last failed attempt occurred |
 
@@ -165,4 +170,4 @@ Each subagent should load **only its own skill**.
 |-------|-------|---------------|-------|
 | `extract-and-understand` | Phase 1 | Inside a per-page subagent | Extract + CIM only, no handoff to transform |
 | `transform-and-create` | Phase 2 | Inside a per-page subagent | Reads CIM, creates modern page |
-| `compare-and-refine` | Phase 2 | Inside the **same** per-page subagent after transform | Compare first; automatically refine only when the initial verified score is below 80 |
+| `compare-and-refine` | Phase 2 | Inside the **same** per-page subagent after transform | Compare first; automatically refine only when the initial verified score is below 80. Explicit user-requested Text web-part restyling bypasses the score gate and re-runs transform in update mode. |

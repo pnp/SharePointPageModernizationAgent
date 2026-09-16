@@ -20,6 +20,39 @@ const LAYOUT_COLUMN_COUNT: Record<SectionLayout, number> = {
   fullWidth: 1,
 };
 
+function unwrapBuilderResult(
+  candidate: unknown,
+  warnings: string[],
+  sectionNumber: number,
+  columnNumber: number,
+): unknown {
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return candidate;
+  }
+
+  const value = candidate as Record<string, unknown>;
+  if ('webPartType' in value || !('webpart' in value)) {
+    return candidate;
+  }
+
+  if (Array.isArray(value.warnings)) {
+    for (const warning of value.warnings) {
+      warnings.push(`Section ${sectionNumber}, Column ${columnNumber}: ${String(warning)}`);
+    }
+  }
+
+  return value.webpart;
+}
+
+function getWebPartType(candidate: unknown): string | undefined {
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return undefined;
+  }
+
+  const webPartType = (candidate as Record<string, unknown>).webPartType;
+  return typeof webPartType === 'string' ? webPartType : undefined;
+}
+
 export function registerLayoutTool(server: McpServer): void {
   server.tool(
     'build_canvas_layout',
@@ -64,25 +97,26 @@ export function registerLayoutTool(server: McpServer): void {
         }
 
         const builtColumns = columns.map((col, cIdx) => {
+          const webparts = col.webparts.map((webpart) =>
+            unwrapBuilderResult(webpart, warnings, sIdx + 1, cIdx + 1),
+          );
+
           // Scan web parts for GA_WHITELIST compliance
-          for (const wp of col.webparts) {
-            if (
-              wp &&
-              wp.webPartType &&
-              !GA_WHITELIST.includes(wp.webPartType)
-            ) {
+          for (const wp of webparts) {
+            const webPartType = getWebPartType(wp);
+            if (webPartType && !GA_WHITELIST.includes(webPartType)) {
               warnings.push(
-                `Section ${sIdx + 1}, Column ${cIdx + 1}: web part type '${wp.webPartType}' is not in the GA whitelist.`,
+                `Section ${sIdx + 1}, Column ${cIdx + 1}: web part type '${webPartType}' is not in the GA whitelist.`,
               );
             }
           }
 
-          totalWebParts += col.webparts.length;
+          totalWebParts += webparts.length;
 
           return {
             id: String(cIdx + 1),
             width: widths[cIdx],
-            webparts: col.webparts,
+            webparts,
           };
         });
 

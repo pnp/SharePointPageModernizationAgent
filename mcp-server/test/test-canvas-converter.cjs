@@ -108,7 +108,11 @@ async function main() {
             data: {
               dataVersion: '1.9',
               title: 'Image',
+              description: 'Image description',
               properties: { imageSourceType: 2, altText: 'logo' },
+              dynamicDataPaths: {},
+              dynamicDataValues: { filterBy: {} },
+              containsDynamicDataSource: true,
             },
           }],
         }],
@@ -124,7 +128,10 @@ async function main() {
     pass('webPartData.title preserved', controls[0].webPartData.title === 'Image');
     pass('webPartData.dataVersion preserved', controls[0].webPartData.dataVersion === '1.9');
     pass('webPartData.properties preserved', controls[0].webPartData.properties.imageSourceType === 2);
-    pass('webPartData.description defaults to ""', controls[0].webPartData.description === '');
+    pass('webPartData.description preserved', controls[0].webPartData.description === 'Image description');
+    pass('dynamic data paths preserved', JSON.stringify(controls[0].webPartData.dynamicDataPaths) === '{}');
+    pass('dynamic data values preserved', JSON.stringify(controls[0].webPartData.dynamicDataValues) === '{"filterBy":{}}');
+    pass('dynamic data source flag preserved', controls[0].webPartData.containsDynamicDataSource === true);
     pass('no serverProcessedContent when omitted', controls[0].webPartData.serverProcessedContent === undefined);
     pass('zoneEmphasis soft → 2', controls[0].position.zoneEmphasis === 2);
   }
@@ -180,7 +187,7 @@ async function main() {
     pass('searchablePlainTexts second key present', spc.searchablePlainTexts['items[1].title'] === 'Help');
     pass('links converted to object', spc.links['items[0].sourceItem.url'] === 'https://contoso.com/home');
     pass('imageSources converted to object', spc.imageSources['items[0].rawPreviewImageUrl'] === '/img.png');
-    pass('customMetadata preserved as-is', spc.customMetadata.someKey === 'preserved');
+    pass('customMetadata converted to object', spc.customMetadata.someKey === 'preserved');
     pass('htmlStrings absent when not provided', spc.htmlStrings === undefined);
   }
 
@@ -282,23 +289,29 @@ async function main() {
     pass('col2 factor=6', controls[2].position.sectionFactor === 6);
   }
 
-  // ── Test 12: unknown web part type without innerHtml — silently skipped ──
-  console.log('\nTest 12: unknown shape silently skipped');
+  // ── Test 12: unknown web part type without innerHtml — rejected ──
+  console.log('\nTest 12: unknown shape rejected');
   {
-    const out = canvasLayoutToCanvasContent1({
-      horizontalSections: [{
-        layout: 'oneColumn',
-        columns: [{
-          webparts: [
-            { someUnknownField: 'value' }, // no innerHtml, no webPartType → skipped
-            { innerHtml: 'kept' },
-          ],
+    let error;
+    try {
+      canvasLayoutToCanvasContent1({
+        horizontalSections: [{
+          layout: 'oneColumn',
+          columns: [{
+            webparts: [
+              { someUnknownField: 'value' },
+              { innerHtml: 'kept' },
+            ],
+          }],
         }],
-      }],
-    });
-    const controls = parse(out);
-    pass('only the valid web part emitted', controls.length === 1);
-    pass('valid one kept', controls[0].innerHTML === 'kept');
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    pass(
+      'invalid web part is rejected',
+      error instanceof Error && error.message.includes('Unsupported canvas web part'),
+    );
   }
 
   // ── Test 13: unique ids ──

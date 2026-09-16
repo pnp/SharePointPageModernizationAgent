@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { post as restPost } from '../sharepoint/rest-client.js';
 import { canvasLayoutToCanvasContent1 } from '../sharepoint/canvas-converter.js';
+import { titleAreaToLayoutWebpartsContent } from '../sharepoint/title-area.js';
 import type { CanvasLayout } from '../sharepoint/canvas-converter.js';
 import { logger } from '../utils/logger.js';
 import { retryOperation } from '../utils/retry.js';
@@ -109,16 +110,14 @@ export function registerCreatePageTool(server: McpServer): void {
         const pageUrl = createResult.d.AbsoluteUrl || createResult.d.Url || null;
 
         // Step 2: Save canvas content
-        const saveBody = {
+        const saveBody: Record<string, unknown> = {
           __metadata: { type: 'SP.Publishing.SitePage' },
           CanvasContent1: canvasContent,
+          LayoutWebpartsContent: titleAreaToLayoutWebpartsContent(title, titleArea),
         };
 
-        // Include title area properties if provided
-        if (titleArea) {
-          if (titleArea.textAboveTitle) {
-            (saveBody as Record<string, unknown>).TopicHeader = titleArea.textAboveTitle;
-          }
+        if (titleArea?.textAboveTitle) {
+          saveBody.TopicHeader = titleArea.textAboveTitle;
         }
 
         logger.info('Saving page content via REST API', { pageId });

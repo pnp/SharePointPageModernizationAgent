@@ -32,6 +32,16 @@ interface SPWebPartEntry {
   };
 }
 
+interface WebPartExtractionResult {
+  entries: SPWebPartEntry[];
+  diagnostics: string[];
+}
+
+interface WebPartExtractionAttempt {
+  pageUrl: string;
+  diagnostics: string[];
+}
+
 /** Fetch the Author field from a list item. Returns author info or undefined. */
 async function fetchAuthor(
   siteUrl: string,
@@ -490,33 +500,65 @@ function parseWikiZones(wikiHtml: string): { zones: WikiZone[]; webPartIds: stri
 
 // ── Shared web part extraction helper ──
 
+function formatExtractionError(error: unknown): string {
+  return String(error).replace(/\s+/g, ' ').trim();
+}
+
 /** Try REST → CSOM → file parse to get web part entries for a page URL. */
-async function extractWebParts(siteUrl: string, pageUrl: string): Promise<SPWebPartEntry[]> {
+async function extractWebPartsWithDiagnostics(siteUrl: string, pageUrl: string): Promise<WebPartExtractionResult> {
+  const diagnostics: string[] = [];
+
   // Try REST LimitedWebPartManager
   try {
     const entries = await fetchWebParts(siteUrl, pageUrl);
-    if (entries.length > 0) return entries;
+    if (entries.length > 0) return { entries, diagnostics };
+    diagnostics.push('REST LimitedWebPartManager returned zero web part entries');
   } catch (err) {
-    logger.warn('REST LimitedWebPartManager failed', { url: pageUrl, error: String(err) });
+    const error = formatExtractionError(err);
+    logger.warn('REST LimitedWebPartManager failed', { url: pageUrl, error });
+    diagnostics.push(`REST LimitedWebPartManager failed: ${error}`);
   }
 
   // Try CSOM (works for wiki pages where REST returns empty)
   try {
     const entries = await fetchWebPartsViaCsom(siteUrl, pageUrl);
-    if (entries.length > 0) return entries;
+    if (entries.length > 0) return { entries, diagnostics };
+    diagnostics.push('CSOM fallback returned zero web part entries');
   } catch (err) {
-    logger.warn('CSOM fallback failed', { url: pageUrl, error: String(err) });
+    const error = formatExtractionError(err);
+    logger.warn('CSOM fallback failed', { url: pageUrl, error });
+    diagnostics.push(`CSOM fallback failed: ${error}`);
   }
 
   // Try parsing the .aspx file directly (works for unghosted web part pages)
   try {
     const entries = await fetchWebPartsFromFile(siteUrl, pageUrl);
-    if (entries.length > 0) return entries;
+    if (entries.length > 0) return { entries, diagnostics };
+    diagnostics.push('ASPX file parse fallback returned zero web part entries');
   } catch (err) {
-    logger.warn('File parse fallback failed', { url: pageUrl, error: String(err) });
+    const error = formatExtractionError(err);
+    logger.warn('File parse fallback failed', { url: pageUrl, error });
+    diagnostics.push(`ASPX file parse fallback failed: ${error}`);
   }
 
-  return [];
+  return { entries: [], diagnostics };
+}
+
+async function extractWebParts(siteUrl: string, pageUrl: string): Promise<SPWebPartEntry[]> {
+  return (await extractWebPartsWithDiagnostics(siteUrl, pageUrl)).entries;
+}
+
+export function createWebPartExtractionError(
+  pageUrl: string,
+  attempts: readonly WebPartExtractionAttempt[],
+): Error {
+  const details = attempts
+    .map(({ pageUrl: attemptUrl, diagnostics }) =>
+      `${attemptUrl}: ${diagnostics.length > 0 ? diagnostics.join('; ') : 'no extractor diagnostics were available'}`,
+    )
+    .join(' | ');
+
+  return new Error(`Web part extraction failed for ${pageUrl}. ${details}`);
 }
 
 // ── Main extraction tool ──
@@ -728,21 +770,24 @@ export async function extractClassicPageBundle(siteUrl: string, pageName: string
           const wpItemId = listItem?.Id;
 
           // Try primary URL, then alternate library URL
-          let spEntries = await extractWebParts(normalizedSiteUrl, wpPageUrl);
+          const extractionAttempts: WebPartExtractionAttempt[] = [];
+          let extractionResult = await extractWebPartsWithDiagnostics(normalizedSiteUrl, wpPageUrl);
+          extractionAttempts.push({ pageUrl: wpPageUrl, diagnostics: extractionResult.diagnostics });
+          let spEntries = extractionResult.entries;
           let successUrl = wpPageUrl;
 
           if (spEntries.length === 0) {
             const altUrl = buildPublishingPageUrl(normalizedSiteUrl, leafName);
             if (altUrl !== wpPageUrl) {
-              spEntries = await extractWebParts(normalizedSiteUrl, altUrl);
+              extractionResult = await extractWebPartsWithDiagnostics(normalizedSiteUrl, altUrl);
+              extractionAttempts.push({ pageUrl: altUrl, diagnostics: extractionResult.diagnostics });
+              spEntries = extractionResult.entries;
               if (spEntries.length > 0) successUrl = altUrl;
             }
           }
 
           if (spEntries.length === 0) {
-            const bundle: ClassicPageBundle = { pageType: 'webpart', title: wpTitle, url: wpPageUrl, siteUrl: normalizedSiteUrl, zones: [], webParts: [] };
-            (bundle as unknown as Record<string, unknown>).warning = 'Web part details unavailable — all extraction methods failed.';
-            return bundle;
+            throw createWebPartExtractionError(wpPageUrl, extractionAttempts);
           }
 
           const webParts: ClassicWebPartInfo[] = [];

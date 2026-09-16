@@ -83,6 +83,7 @@ When `migrate-site` invokes this skill immediately after a page is transformed a
 - Do not automatically refine a score of 80 or higher, even if it reports non-blocking issues.
 - Do not automatically refine a null or low-confidence score. Preserve it as inconclusive according to Step 1.
 - Once the gate has opened, stop automatic refinement when coverage reaches 80 or when no concrete, supported remediation remains.
+- Do not use automatic scoring as a trigger for Text web-part styling changes. The scorer measures structure and content coverage, not presentation-style fidelity; all source HTML is already passed through `build_text_webpart` during the initial transform.
 
 For a page eligible for automatic refinement:
 1. Match each gap against known patterns in the knowledge files
@@ -91,6 +92,21 @@ For a page eligible for automatic refinement:
 4. Re-run live verification and comparison, then persist the final verified CIM fields
 
 A direct, user-requested `compare-and-refine` run may still refine a page above this threshold when the user explicitly asks for it.
+
+### Direct Text Web Part Restyling
+
+When the explicit request is to apply a newly supported Text web-part style transformation to an existing migrated page, bypass the score gate and invoke `transform-and-create` in update mode. It must rebuild all source-derived Text web parts from the original CIM through `build_text_webpart`, reassemble the complete canvas, and update the verified existing page ID. Do not use extracted modern HTML as the input and do not create a duplicate page.
+
+After live verification and comparison, persist:
+
+```json
+{
+  "textWebpartStyleRefinedAt": "<ISO timestamp>",
+  "textWebpartStyleRefinementReason": "explicit-user-request"
+}
+```
+
+This is a user-directed refresh, not an automatic remediation. It preserves the existing automatic threshold for structural refinements.
 
 ### Step 3: Report
 

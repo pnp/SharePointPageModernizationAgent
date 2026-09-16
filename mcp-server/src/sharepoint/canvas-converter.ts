@@ -26,8 +26,12 @@ interface WebPartInput {
   data?: {
     dataVersion?: string;
     title?: string;
+    description?: string;
     properties?: Record<string, unknown>;
     serverProcessedContent?: Record<string, unknown>;
+    dynamicDataPaths?: Record<string, unknown>;
+    dynamicDataValues?: Record<string, unknown>;
+    containsDynamicDataSource?: boolean;
   };
 }
 
@@ -115,9 +119,9 @@ function convertServerProcessedContent(
       result[key] = kvArrayToObject(val);
     }
   }
-  // customMetadata has a different structure — preserve as-is
+  // customMetadata uses the same { key, value } array form as other Graph fields.
   if (spc.customMetadata) {
-    result.customMetadata = spc.customMetadata;
+    result.customMetadata = kvArrayToObject(spc.customMetadata);
   }
   return Object.keys(result).length > 0 ? result : undefined;
 }
@@ -175,13 +179,22 @@ export function canvasLayoutToCanvasContent1(layout: CanvasLayout): string {
             id: wp.webPartType,
             instanceId: id,
             title: data?.title || '',
-            description: '',
+            description: data?.description || '',
             dataVersion: data?.dataVersion || '1.0',
             properties: data?.properties || {},
           };
 
           if (restSpc) {
             webPartData.serverProcessedContent = restSpc;
+          }
+          if (data?.dynamicDataPaths !== undefined) {
+            webPartData.dynamicDataPaths = data.dynamicDataPaths;
+          }
+          if (data?.dynamicDataValues !== undefined) {
+            webPartData.dynamicDataValues = data.dynamicDataValues;
+          }
+          if (data?.containsDynamicDataSource !== undefined) {
+            webPartData.containsDynamicDataSource = data.containsDynamicDataSource;
           }
 
           controls.push({
@@ -192,6 +205,10 @@ export function canvasLayoutToCanvasContent1(layout: CanvasLayout): string {
             webPartData,
             addedFromPersistedData: true,
           });
+        } else {
+          throw new Error(
+            `Unsupported canvas web part at section ${sectionIdx + 1}, column ${colIdx + 1}, position ${wpIdx + 1}. Expected a text web part or a standard web part with webPartType.`,
+          );
         }
       }
     }

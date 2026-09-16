@@ -169,7 +169,7 @@ ContentEditorWebPart (CEWP) contains arbitrary HTML. Classify by intent:
 | Image Galleries / Hero Images | Multiple `<img>` tags, or one large image with overlay text | Single image → `build_image_webpart`; multiple images → `build_any_webpart` with Image Gallery; image with text overlay → Hero via `build_any_webpart` |
 | Data Tables | `<table>` with `<thead>` and `<tbody>` | `build_text_webpart` — modern text web parts render tables well |
 | Styled Banners / Announcements | Large text, colored backgrounds, call-to-action buttons | Hero or Call to Action via `build_any_webpart`, or `build_text_webpart` |
-| JavaScript-Dependent Content | `<script>`, `onclick`, jQuery references, `SP.js` calls | `build_text_webpart` fallback whose complete explanatory note is wrapped in `<span class="ms-rtebackcolor-3">...</span>` |
+| JavaScript-Dependent Content | `<script>`, `onclick`, jQuery references, `SP.js` calls | `build_text_webpart` fallback whose complete explanatory note is inside a yellow one-cell table callout |
 
 Scripts cannot run in modern pages.
 

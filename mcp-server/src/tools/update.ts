@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { post as restPost } from '../sharepoint/rest-client.js';
 import { canvasLayoutToCanvasContent1 } from '../sharepoint/canvas-converter.js';
+import { titleAreaToLayoutWebpartsContent } from '../sharepoint/title-area.js';
 import type { CanvasLayout } from '../sharepoint/canvas-converter.js';
 import { logger } from '../utils/logger.js';
 
@@ -27,7 +28,7 @@ export function registerUpdatePageTool(server: McpServer): void {
       titleArea: z.any().optional().describe('Updated title area configuration'),
       useBetaApi: z.boolean().default(false).describe('Unused legacy parameter, kept for backward compatibility'),
     },
-    async ({ siteUrl, pageId, canvasLayout, title }) => {
+    async ({ siteUrl, pageId, canvasLayout, title, titleArea }) => {
       const warnings: string[] = [];
 
       try {
@@ -37,6 +38,17 @@ export function registerUpdatePageTool(server: McpServer): void {
 
         if (title !== undefined) {
           saveBody.Title = title;
+        }
+
+        if (title !== undefined || titleArea !== undefined) {
+          const titleAreaTitle = titleArea?.title ?? title;
+          if (!titleAreaTitle) {
+            throw new Error('Updating a title area requires a page title or titleArea.title.');
+          }
+          saveBody.LayoutWebpartsContent = titleAreaToLayoutWebpartsContent(titleAreaTitle, titleArea);
+          if (title === undefined) {
+            saveBody.Title = titleAreaTitle;
+          }
         }
 
         if (canvasLayout !== undefined) {

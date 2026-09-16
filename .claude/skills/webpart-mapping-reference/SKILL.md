@@ -93,7 +93,7 @@ When processing `wikiZones`:
 
 Never silently skip embedded web parts.
 
-For every explanatory fallback, wrap the entire notice in `<span class="ms-rtebackcolor-3">...</span>`. `build_text_webpart` converts this to SharePoint's native yellow `highlightColorYellow`. Do not highlight ordinary migrated content.
+For every explanatory fallback, use a one-cell table with `background-color:#fff4ce`, `border:1px solid #ffb900`, and `padding:12px`. `build_text_webpart` preserves the yellow background, padding, and a visible border; tenant styling can override the requested border color. Keep the complete notice inside the yellow callout; do not use it for ordinary migrated content.
 
 ---
 
@@ -102,9 +102,9 @@ For every explanatory fallback, wrap the entire notice in `<span class="ms-rteba
 | Classic Web Part | Primary Modern Equivalent | Builder Tool | Fallback | Notes |
 |---|---|---|---|---|
 | ContentEditorWebPart | *Varies by content* | See CEWP Classification below | `build_text_webpart` | AI adds the most value here |
-| ImageWebPart | Image | `build_image_webpart` | — | Direct 1:1 mapping |
-| XsltListViewWebPart | List | `build_any_webpart` | `build_text_webpart` (link to list) | May need beta API |
-| ListViewWebPart | List | `build_any_webpart` | `build_text_webpart` (link to list) | Same as XsltListView |
+| ImageWebPart | Image | `build_image_webpart` | Text with linked `<img>` | Use the Text fallback for SVG files; modern Image web parts can render SVGs blank |
+| XsltListViewWebPart | List | `build_list_webpart` | `build_text_webpart` (link to list) | Resolve the destination list/view before building |
+| ListViewWebPart | List | `build_list_webpart` | `build_text_webpart` (link to list) | Same as XsltListView |
 | PageViewerWebPart | DocumentEmbed or Embed | `build_any_webpart` / `build_embed_webpart` | — | DocumentEmbed for docs, Embed for URLs |
 | ScriptEditorWebPart | Embed (no scripts) or Text (with scripts) | `build_embed_webpart` / `build_text_webpart` | — | Scripts cannot run in modern pages |
 | SummaryLinkWebPart | Quick Links | `build_quick_links_webpart` | — | Natural mapping |
@@ -123,11 +123,13 @@ For every explanatory fallback, wrap the entire notice in `<span class="ms-rteba
 | Image Galleries / Hero Images | Multiple `<img>` tags, or a single large image with overlay text | Single image → `build_image_webpart`; multiple images → consider `build_any_webpart` with Image Gallery; image with text overlay → consider Hero via `build_any_webpart` |
 | Data Tables | `<table>` with `<thead>` and `<tbody>` | `build_text_webpart` |
 | Styled Banners / Announcements | Large text, colored backgrounds, CTA buttons | Consider Hero or Call to Action via `build_any_webpart`, or `build_text_webpart` |
-| JavaScript-Dependent Content | `<script>`, `onclick`, jQuery references, `SP.js` calls | `build_text_webpart` with the full explanatory note wrapped in `<span class="ms-rtebackcolor-3">...</span>` |
+| JavaScript-Dependent Content | `<script>`, `onclick`, jQuery references, `SP.js` calls | `build_text_webpart` with the full explanatory note in a yellow one-cell table callout |
 
 **CTA buttons:** Prefer styled `<a>` tags inside a text web part. The Button and CallToAction web parts are unreliable (inconsistent rendering, style loss, occasional silent drops on save), so a styled anchor inside `build_text_webpart` is the most predictable reproduction.
 
 ### Quick Links Layout Guide
+
+For a `SummaryLinkWebPart`, pass the classic web part `title` to `build_quick_links_webpart` as its visible Quick Links heading. Preserve this heading separately from the individual link titles and descriptions.
 
 | Layout | Use When |
 |---|---|
