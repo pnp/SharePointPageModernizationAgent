@@ -6,8 +6,9 @@
  *   Tier 2: Headless browser — silent cookie refresh via persistent profile
  *   Tier 3: Visible browser — manual login fallback (only when AAD session expired)
  *
- * Uses a Playwright persistent browser profile so AAD session cookies
- * are preserved. First run: user logs in manually. After that: zero-click.
+ * Uses a process-scoped Playwright browser profile plus a shared cookie cache.
+ * The isolated profile prevents parallel MCP workers from contending for one
+ * Chromium user data directory.
  */
 import {
   existsSync,
@@ -26,7 +27,7 @@ import type { BrowserContext, Page } from 'playwright-core';
 // ── Constants ──
 
 const CACHE_DIR = join(homedir(), '.classic-to-modern');
-const BROWSER_PROFILE_DIR = join(CACHE_DIR, 'browser-profile');
+const BROWSER_PROFILE_DIR = join(CACHE_DIR, 'browser-profiles', String(process.pid));
 const COOKIE_CACHE_FILE = join(CACHE_DIR, 'cookie-cache.json');
 const COOKIE_CACHE_TMP = join(CACHE_DIR, `cookie-cache.${process.pid}.tmp`);
 const BUFFER_MS = 5 * 60 * 1000; // 5-minute buffer before expiry
@@ -107,6 +108,34 @@ function refreshHostFromDisk(host: string): CookieEntry | undefined {
 
 function isUsableCookie(entry: CookieEntry | undefined): entry is CookieEntry {
   return Boolean(entry && entry.expiresAt - Date.now() > BUFFER_MS);
+}
+
+function parseCookieHeader(cookieHeader: string, siteUrl: string): Array<{
+  name: string;
+  value: string;
+  url: string;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: 'Lax';
+}> {
+  const url = new URL(siteUrl).origin;
+  return cookieHeader.split(';').flatMap(segment => {
+    const separator = segment.indexOf('=');
+    if (separator <= 0) return [];
+
+    const name = segment.slice(0, separator).trim();
+    const value = segment.slice(separator + 1).trim();
+    if (!name || !value) return [];
+
+    return [{
+      name,
+      value,
+      url,
+      httpOnly: true,
+      secure: url.startsWith('https://'),
+      sameSite: 'Lax' as const,
+    }];
+  });
 }
 
 // ── Cross-process auth lock ──
@@ -448,9 +477,20 @@ export async function closeBrowserContext(): Promise<void> {
  * Create a new page from the headed browser context, with automatic recovery
  * if the context was unexpectedly closed (browser crash, etc.).
  */
-export async function createBrowserPage(): Promise<{ ctx: BrowserContext; page: Page }> {
+export async function createBrowserPage(siteUrl: string): Promise<{ ctx: BrowserContext; page: Page }> {
   let ctx = await getOrCreateBrowserContext();
+
+  const addSharePointCookies = async (): Promise<void> => {
+    const cookieHeader = await getSharePointCookies(siteUrl);
+    const cookies = parseCookieHeader(cookieHeader, siteUrl);
+    if (cookies.length === 0) {
+      throw new Error(`No SharePoint cookies available for browser context at ${new URL(siteUrl).origin}`);
+    }
+    await ctx.addCookies(cookies);
+  };
+
   try {
+    await addSharePointCookies();
     const page = await ctx.newPage();
     return { ctx, page };
   } catch (err) {
@@ -458,6 +498,7 @@ export async function createBrowserPage(): Promise<{ ctx: BrowserContext; page: 
       logger.info('Browser context was closed unexpectedly, recreating');
       resetBrowserContext();
       ctx = await getOrCreateBrowserContext();
+      await addSharePointCookies();
       const page = await ctx.newPage();
       return { ctx, page };
     }

@@ -832,7 +832,7 @@ export function registerCompareTool(server: McpServer): void {
         const siteOrigin = `${url.protocol}//${url.host}`;
         await getSharePointCookies(siteOrigin);
 
-        const { page } = await createBrowserPage();
+        const { page } = await createBrowserPage(siteOrigin);
 
         try {
           logger.info('Navigating for data extraction', { pageUrl });

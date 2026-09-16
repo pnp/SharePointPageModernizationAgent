@@ -33,7 +33,7 @@ The agent runs a local MCP server and works through four skills:
 - **compare-and-refine** — opens both pages, scores how closely they match, and iterates to improve fidelity.
 - **migrate-site** — runs the above across every classic page in a site.
 
-Sign-in uses a real browser via Playwright. You authenticate once per tenant; the session is saved to `~/.classic-to-modern/browser-profile/` and reused.
+Sign-in uses a real browser via Playwright. You authenticate once per tenant; SharePoint cookies are saved in `~/.classic-to-modern/cookie-cache.json` and reused. Each MCP process uses an isolated browser profile under `~/.classic-to-modern/browser-profiles/` so parallel migrations do not contend for one Chromium profile.
 
 ---
 

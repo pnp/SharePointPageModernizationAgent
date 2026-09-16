@@ -44,7 +44,7 @@ export function registerScreenshotTool(server: McpServer): void {
         const siteOrigin = `${url.protocol}//${url.host}`;
         await getSharePointCookies(siteOrigin);
 
-        const { page } = await createBrowserPage();
+        const { page } = await createBrowserPage(siteOrigin);
         await page.setViewportSize({ width: 1920, height: 1080 });
 
         try {
@@ -244,7 +244,7 @@ export function registerScreenshotTool(server: McpServer): void {
         const siteOrigin = `${url.protocol}//${url.host}`;
         await getSharePointCookies(siteOrigin);
 
-        const { page } = await createBrowserPage();
+        const { page } = await createBrowserPage(siteOrigin);
 
         try {
           logger.info('Navigating for HTML extraction', { pageUrl });

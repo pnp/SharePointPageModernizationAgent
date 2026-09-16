@@ -26,7 +26,7 @@ fails), then print a short summary. Use ✅ PASS, ⚠️ WARN, ❌ FAIL.
    page — the same thing the auth flow does. PASS if it exits 0 and reports the
    working channel. This is best-effort: treat a failure as ⚠️ WARN, not ❌ FAIL.
    Fix hint: install Google Chrome or Microsoft Edge.
-8. **Auth profile** — check whether `~/.classic-to-modern/browser-profile` exists.
+8. **Auth cache** — check whether `~/.classic-to-modern/cookie-cache.json` exists.
    WARN if absent (user hasn't signed in yet); this is expected on first run.
 
 Then print:

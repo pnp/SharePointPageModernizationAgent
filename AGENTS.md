@@ -16,7 +16,7 @@ node test/test-safelinks.cjs
 - `mcp-server/` exposes the local `classic-to-modern` MCP server.
 - `.claude/skills/` contains the migration playbooks used by Claude Code and GitHub Copilot CLI skills.
 - `pageunderstanding/` stores generated CIM JSON files for extracted pages.
-- Authentication uses Playwright browser cookies with a persistent browser profile at `~/.classic-to-modern/browser-profile/`.
+- Authentication uses a shared Playwright cookie cache at `~/.classic-to-modern/cookie-cache.json` and process-scoped browser profiles under `~/.classic-to-modern/browser-profiles/`, preventing parallel migrations from contending for one browser profile.
 
 ## GitHub Copilot CLI workflow
 
