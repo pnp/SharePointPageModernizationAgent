@@ -17,7 +17,7 @@ cd mcp-server && node test/test-safelinks.cjs  # verify HTML sanitizer
 
 ## Architecture
 - `mcp-server/` — MCP server (Node.js/TypeScript) with 17 tools
-- `.claude/skills/` — 5 skills: extract-and-understand, transform-and-create, compare-and-refine, migrate-site, webpart-mapping-reference
+- `.claude/skills/` — 6 skills: extract-and-understand, transform-and-create, compare-and-refine, advanced-page-refinement, migrate-site, webpart-mapping-reference
 - Auth: Playwright browser-based cookie auth with a shared cache at `~/.classic-to-modern/cookie-cache.json` and process-scoped profiles under `~/.classic-to-modern/browser-profiles/`.
 
 ## Key migration rules

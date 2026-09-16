@@ -26,11 +26,12 @@ This project is a **complementary, AI-driven** alternative. Reach for it when pa
 
 ## How it works
 
-The agent runs a local MCP server and works through four skills:
+The agent runs a local MCP server and works through five migration skills:
 
 - **extract-and-understand** — reads the classic page into an internal model.
 - **transform-and-create** — maps each piece to the closest modern web part and creates the modern page.
 - **compare-and-refine** — opens both pages, scores how closely they match, and iterates to improve fidelity.
+- **advanced-page-refinement** — performs a comprehensive visual fidelity pass on an existing modern page and updates it in place.
 - **migrate-site** — runs the above across every classic page in a site.
 
 Sign-in uses a real browser via Playwright. You authenticate once per tenant; SharePoint cookies are saved in `~/.classic-to-modern/cookie-cache.json` and reused. Each MCP process uses an isolated browser profile under `~/.classic-to-modern/browser-profiles/` so parallel migrations do not contend for one Chromium profile.
@@ -154,6 +155,8 @@ If matching page-understanding JSON already exists for discovered pages, the age
 > The layout is off on `OldHome.aspx` — please compare and refine that page again.
 
 > The hero image didn't come across. Re-check the classic page and fix the image web part on the modern page.
+
+> Deeply refine the existing modern page to match the classic source, including its Text web-part styling and unresolved placeholders.
 
 ### Tips
 
