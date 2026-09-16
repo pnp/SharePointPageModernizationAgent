@@ -89,7 +89,8 @@ When processing `wikiZones`:
 - **Web-part zone** (`webPartIds` non-empty): match by **position index**, then:
   1. if `resolvedHtml` exists, use `build_text_webpart` or classify it into a richer web part such as Quick Links or Image
   2. if `modernMapping` exists, validate it against the catalog schema, then use `modernMapping.builderTool` with `modernMapping.webPartId` and only schema-valid properties; for cross-site list web parts, call `resolve_list_info` to resolve destination-site equivalents
-  3. only if neither exists and the type is truly unknown, create a yellow-highlighted text fallback naming the classic type and the recommended modern alternative
+  3. if a native mapping cannot be built, use any source-derived visible output, resolved HTML, links, images, title, or safely representable properties to build a faithful static Text web part
+  4. only when neither a native mapping nor a faithful static representation is possible, create a yellow-highlighted text fallback naming the classic type and the recommended modern alternative
 
 Never silently skip embedded web parts.
 
@@ -110,7 +111,7 @@ For every explanatory fallback, use a one-cell table with `background-color:#fff
 | SummaryLinkWebPart | Quick Links | `build_quick_links_webpart` | — | Natural mapping |
 | ContentByQueryWebPart | Highlighted Content | `build_any_webpart` | `build_text_webpart` | Complex queries may need manual config |
 | TitleBarWebPart | Text | `build_text_webpart` | — | Simple heading/caption |
-| Unknown types | Text + Any | `build_text_webpart` / `build_any_webpart` | — | Analyze content directly |
+| Unknown types | Catalog-validated modern control or static Text | `build_any_webpart` / `build_text_webpart` | Yellow fallback only when neither is possible | Analyze source content directly; never use a generic notice before attempting a meaningful static representation |
 
 ---
 

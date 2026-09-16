@@ -87,7 +87,7 @@ When `migrate-site` invokes this skill immediately after a page is transformed a
 
 For a page eligible for automatic refinement:
 1. Match each gap against known patterns in the knowledge files
-2. Replace Rich Text substitutions with purpose-built modern web parts, restore missing or zero-sized images, and rebuild any layout whose column mapping differs
+2. Replace Rich Text substitutions with purpose-built modern web parts, restore missing or zero-sized images, and rebuild any layout whose column mapping differs. For every yellow fallback, first retry a dedicated modern builder, then a catalog-validated `build_any_webpart` mapping, then a source-derived static Text representation. Retain the yellow fallback only when none of those can faithfully represent the source behavior.
 3. Reassemble the canvas with `build_canvas_layout` and update via `update_modern_page`
 4. Re-run live verification and comparison, then persist the final verified CIM fields
 

@@ -16,6 +16,7 @@ Extract a classic SharePoint page (wiki, web part page, or publishing page), cla
 
 - **Understand intent, not just tags.** Classify by what the content is trying to do.
 - **Try your best.** A creative approximation beats a bland fallback; use `build_any_webpart` as the escape hatch.
+- **Use warnings only as a last resort.** Plan a supported modern web part first, then a source-derived static Text web part that preserves visible content; use a yellow fallback only when neither can faithfully represent the control.
 - **Be honest about limits.** JavaScript-dependent content cannot run in modern pages. Preserve it as text with alternatives.
 - **Never silently drop content.**
 - **Be autonomous.** Ask only when you cannot proceed:

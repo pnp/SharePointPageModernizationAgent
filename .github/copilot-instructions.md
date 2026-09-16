@@ -13,7 +13,7 @@ Read `AGENTS.md` first for build commands, architecture, and migration invariant
 - Every source-derived HTML block must pass through `build_text_webpart` during the initial transform so the current Canvas RTE-safe style transformations are present on the first saved modern page.
 - After a transform/save, persist the initial verified comparison. When its finite score is below 80, automatically refine the same existing modern page; do not auto-refine scores of 80 or higher, or null/low-confidence results. Styling alone does not open this score gate; an explicit user-requested restyle rebuilds the existing page's Text web parts from the CIM in update mode.
 - Be autonomous during migrations. After page discovery, if valid page-understanding JSON already exists for any discovered pages, ask once whether to reuse those CIMs or re-extract them. Otherwise ask only for true blockers such as an unknown destination site for publishing-site migrations where the Site Pages feature is not activated, or an authentication failure that cannot be retried.
-- Preserve all user content. If a classic artifact cannot run in modern SharePoint, create a yellow-highlighted text fallback describing the lost behavior and recommended modern alternative.
+- Preserve all user content. Before using a yellow fallback, first attempt a supported modern web part and then a source-derived static Text web part; use the fallback only when neither can faithfully represent the classic artifact, and name the recommended modern alternative.
 
 ## Validation
 

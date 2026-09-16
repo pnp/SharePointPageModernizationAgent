@@ -2,6 +2,8 @@
 
 Per-web-part PnP transformation details extracted from `webpartmapping.xml` v1.0.2111.0. Read this file when you need selector branches, property names, or migration specifics for a particular classic web part.
 
+**Migration-agent rule:** An `Empty`, `dropped`, or `ClientSideText error` result below documents the legacy PnP baseline; it does not authorize the agent to omit the source control. Before using a yellow fallback, attempt a supported modern equivalent and then a faithful source-derived static Text representation. Use a yellow fallback only when neither is possible.
+
 ---
 
 ## Tier 1: Direct Mapping

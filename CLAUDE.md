@@ -22,7 +22,7 @@ cd mcp-server && node test/test-safelinks.cjs  # verify HTML sanitizer
 
 ## Key migration rules
 - Never fabricate ULS tags or GUIDs.
-- Never silently drop classic content; preserve unsupported or script-dependent content as a yellow-highlighted explanatory text fallback with modern alternatives.
+- Never silently drop classic content. Resolve each classic web part in this order: a faithful supported modern web part, a source-derived static Text web part, then—only when neither is possible—a yellow explanatory fallback with a specific modern alternative.
 
 ## Coding Conventions
 - TypeScript strict mode

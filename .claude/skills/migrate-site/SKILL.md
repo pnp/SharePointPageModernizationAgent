@@ -89,7 +89,7 @@ Process all planned pages in parallel, up to **5 concurrent tasks**. Each task h
    - persist the initial result to the CIM with `comparisonScore`, `comparisonConfidence`, `comparisonSummary`, and `comparedAt`
    - **Automatic refinement gate:** when the persisted initial `comparisonScore` is finite and below `80`, immediately invoke `compare-and-refine` in refinement mode inside the same per-page task. Do not ask the user to approve this follow-up.
      - Refine the existing verified page only. Use its authoritative page ID with `update_modern_page`; never create a duplicate page.
-     - Preserve all source content. Unsupported or script-dependent behavior must remain a yellow-highlighted explanatory fallback with a supported modern alternative.
+     - Preserve all source content. For every unresolved classic control, first attempt a supported modern web part and then a faithful source-derived static Text web part. Use a yellow-highlighted explanatory fallback only when neither can represent the control; name the lost runtime behavior and a supported modern alternative.
      - After every update, repeat live lookup, modern extraction, screenshots, and comparison before persisting the new result.
      - Continue while the score remains below `80` and the report identifies a concrete, supported remediation. Stop when the score reaches `80` or above, or when no further supported remediation can improve the result. Persist the final verified comparison fields to the CIM.
    - Do not automatically refine a score of `80` or higher. A null or low-confidence score remains inconclusive and must not trigger automatic refinement.

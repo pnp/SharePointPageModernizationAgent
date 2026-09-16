@@ -148,7 +148,7 @@ If matching page-understanding JSON already exists for discovered pages, the age
 
 > Migrate only the pages under the `SitePages` library on `https://contoso.sharepoint.com/sites/Marketing`.
 
-**5. Review and refine.** Open the generated pages against the originals before publishing or deleting anything. Content that can't be perfectly reproduced is preserved as yellow-highlighted explanatory text describing what was lost and a suggested modern alternative. Ask the agent to fix anything that's off:
+**5. Review and refine.** Open the generated pages against the originals before publishing or deleting anything. The agent first seeks a supported modern web part, then a source-derived static Text web part, and uses yellow explanatory text only when neither can represent the classic behavior. Ask the agent to fix anything that's off:
 
 > Compare the modern page you just created against the classic original and tell me the fidelity score.
 

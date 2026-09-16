@@ -177,7 +177,7 @@ for each zone in wikiZones:
       For cross-site list web parts (XsltListViewWebPart / ListViewWebPart):
         - Identify the source list by its underlying `ListId`, `ListUrl`, or `TitleUrl` before considering the web part's display `title`. A display title such as "Documents" may actually point to `/Lists/Links`; never infer the list from the display title alone.
         - For same-site migration, preserve the exact source list when it still exists. Resolve using the underlying list URL/title and verify that the returned ID or server-relative URL matches the CIM.
-        - For cross-site migration, resolve the DESTINATION site's intentional equivalent library (e.g. source "Pages" → dest "Site Pages"). If no unambiguous equivalent exists, preserve the source list content as links or a yellow-highlighted explanatory fallback rather than silently binding a different list.
+        - For cross-site migration, resolve the DESTINATION site's intentional equivalent library (e.g. source "Pages" → dest "Site Pages"). If no unambiguous equivalent exists, first preserve source list items or links in a Text web part; use a yellow-highlighted explanatory fallback only when no source-derived static representation is available, rather than silently binding a different list.
         - Call `resolve_list_info(siteUrl, listTitle)` on the DESTINATION site using the underlying list's resolved title (derived from its ID/URL), not the web part display title, to get the list ID, default view ID, and server-relative URL
         - Use `build_list_webpart` with:
           - `siteUrl`: destination site URL
@@ -189,7 +189,8 @@ for each zone in wikiZones:
         - `build_list_webpart` adds the required web-relative list URL, root-folder path, searchable list title, and dynamic-data configuration. Do not hand-roll or omit these fields.
         - When the exact/equivalent list resolves unambiguously, create a real List web part rather than falling back to text links or Quick Links. Use fallback content only when no valid destination list exists.
         - After building, confirm `selectedListId` and `selectedListUrl` identify the intended source/equivalent list. Reject mappings where only the display title matches.
-    → Tier 3 (last resort): yellow-highlighted text fallback noting the classic type + modern alternatives
+    → Tier 3: If a native mapping cannot be built, create a source-derived static Text web part from resolved HTML or safely representable visible content, links, images, title, and properties. Do not invent current news, members, document items, or other tenant-specific content.
+    → Tier 4 (last resort): yellow-highlighted text fallback only when no native mapping and no faithful static Text representation are possible; note the classic type, lost behavior, and modern alternative.
   else if zone.html is not empty:
     → build_text_webpart with zone.html and sourceUrl
 ```
@@ -200,7 +201,7 @@ Before saving, reconcile every `wikiZones[].webPartIds` entry against exactly on
 
 #### Modern Fallback Notice Format
 
-All explanatory fallbacks for unsupported, script-dependent, or unresolved classic web parts must be visually distinct from migrated page content. Build them as a Text web part with the complete notice in a Canvas RTE-safe yellow table callout:
+All explanatory fallbacks for unsupported, script-dependent, or unresolved classic web parts must be visually distinct from migrated page content. Use one only after attempting a dedicated modern builder, a catalog-validated `build_any_webpart` mapping, and a source-derived static Text representation. Build the complete notice as a Text web part in a Canvas RTE-safe yellow table callout:
 
 ```html
 <table style="width:100%;border-collapse:collapse"><tbody><tr>
