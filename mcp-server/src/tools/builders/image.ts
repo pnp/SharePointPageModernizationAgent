@@ -18,6 +18,10 @@ export interface ImageWebPartOptions {
   alignment?: 'Left' | 'Center' | 'Right';
 }
 
+function isSvgUrl(imageUrl: string): boolean {
+  return imageUrl.split(/[?#]/, 1)[0].toLowerCase().endsWith('.svg');
+}
+
 export function buildImageWebPart({
   imageUrl,
   altText = '',
@@ -33,6 +37,24 @@ export function buildImageWebPart({
   alignment = 'Center',
 }: ImageWebPartOptions): StandardWebPart {
   const hasSourceMetadata = Boolean(siteId && webId && listId && uniqueId);
+
+  if (isSvgUrl(imageUrl)) {
+    throw new Error(
+      'SVG images must use build_text_webpart with a sanitized <img> element because the modern Image web part can render SVG controls blank.',
+    );
+  }
+
+  if (!Number.isFinite(imgWidth) || imgWidth <= 0 || !Number.isFinite(imgHeight) || imgHeight <= 0) {
+    throw new Error(
+      'build_image_webpart requires positive imgWidth and imgHeight values so the modern Image web part does not render at 0x0.',
+    );
+  }
+
+  if (!hasSourceMetadata) {
+    throw new Error(
+      'build_image_webpart requires siteId, webId, listId, and uniqueId for a same-site image. Use build_text_webpart with a sanitized <img> element when this metadata is unavailable.',
+    );
+  }
 
   return {
     webPartType: WebPartId.IMAGE,
@@ -63,19 +85,17 @@ export function buildImageWebPart({
           { key: 'captionText', value: captionText },
           { key: 'altText', value: altText },
         ],
-        ...(hasSourceMetadata ? {
-          customMetadata: [{
-            key: 'imageSource',
-            value: {
-              siteId,
-              webId,
-              listId,
-              uniqueId,
-              width: String(imgWidth),
-              height: String(imgHeight),
-            },
-          }],
-        } : {}),
+        customMetadata: [{
+          key: 'imageSource',
+          value: {
+            siteId,
+            webId,
+            listId,
+            uniqueId,
+            width: String(imgWidth),
+            height: String(imgHeight),
+          },
+        }],
       },
       dynamicDataPaths: {},
       dynamicDataValues: {},
@@ -86,7 +106,7 @@ export function buildImageWebPart({
 export function registerBuildImageTool(server: McpServer): void {
   server.tool(
     'build_image_webpart',
-    'Build an Image web part JSON from an image URL for use in a modern page canvas.',
+    'Build a modern Image web part for a same-site non-SVG image with verified source metadata and positive natural dimensions. Use build_text_webpart for SVGs or images without this metadata.',
     {
       imageUrl: z.string().describe('URL of the image to display'),
       altText: z.string().optional().describe('Alternative text for accessibility'),

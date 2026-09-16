@@ -18,7 +18,7 @@ const FULL_CATALOG: CatalogEntry[] = [
   {
     id: WebPartId.IMAGE,
     name: 'Image',
-    description: 'Displays an image with optional alt text, caption, overlay text, and link.',
+    description: 'Displays a same-site non-SVG image with verified source metadata and natural dimensions. Use a Text web part for SVGs or images without complete source metadata.',
     supportedOn: ['v1.0', 'beta'],
     inGaWhitelist: true,
     builderTool: 'build_image_webpart',
